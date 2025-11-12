@@ -38,6 +38,7 @@ begin
 	using Statistics
 	using StatsBase
 	using OrderedCollections
+	using PrettyTables
 end
 
 # ╔═╡ 8230d169-70d3-4668-abde-5d652d2ccf07
@@ -46,49 +47,133 @@ begin
 	using .MsiaGen
 end
 
-# ╔═╡ a42ede34-6c38-4106-9145-544cc0bd4e48
+# ╔═╡ 0c287c83-2dad-4303-a9fd-343c821468b0
 md"""
-**Understanding Weather Interactions Through System Coupling**
+## 1. Controls
+"""
+
+# ╔═╡ 5b0cc9ca-f269-4d74-9968-afb479cd2969
+begin
+	show_notes_check = @bind show_notes PlutoUI.CheckBox(default=true)
+	locksave_check = @bind locksave PlutoUI.CheckBox(default=true)
+	showperiod_check = @bind showperiod PlutoUI.CheckBox(default=false)
+	
+	@htl("""
+		<style>
+		details {
+			border: none !important;
+			outline: none !important;
+			box-shadow: none !important;
+			padding: 10px;
+		}
+		details summary {
+			border: none !important;
+			outline: none !important;
+		}
+		</style>
+		<table cellpadding="0" cellspacing="0" class="load-table">
+		<tr>
+			<th>Option</th>
+			<th>Selection</th>
+		</tr>
+		<tr>
+			<td>Show all notes? (Tick to show all)</td>
+			<td>$(show_notes_check)</td>
+		</tr>
+		<tr>
+			<td>Lock figures saving? (Tick to prevent saving)</td>
+			<td>$(locksave_check)</td>
+		</tr>
+		<tr>
+			<td>Show period of interest? (Tick to show)</td>
+			<td>$(showperiod_check)</td>
+		</tr>
+		</table>
+	""")
+end
+
+# ╔═╡ a42ede34-6c38-4106-9145-544cc0bd4e48
+details(
+"Introduction",
+md"""
+!!! info "Understanding weather interactions through system coupling"
 
 Weather at any location emerges from tightly coupled physical processes. The interplay between these processes is mapped in Fig. 1, where Blue Circles are measured weather data, Green Boxes are derived agricultural metrics like VPD and ET, and Orange Boxes show final crop impacts. The effect of solar radiation is controlled by **Cloud Cover**, which moderates incoming energy. This, in turn, affects **Max Temperature (Tmax)** and **Mean Temperature**, which controls **Vapor Pressure Deficit (VPD)**, the atmosphere's "thirst" for moisture. **Rainfall** reduces VPD by adding humidity, while high VPD indicates dry air demanding water from plants and soil.
+
+$(PlutoUI.LocalResource("./images/weather_interactions.svg"))
+
+_**Fig. 1.** Weather variable interactions and their agricultural impacts._
 
 **Wind** influences the system through multiple pathways: increasing **evaporative demand (ET₀)**, correlating with rainfall events (monsoon surges, storms), and affecting cloud formation. Rainfall inputs to **Soil Water Storage**, while ET₀ represents atmospheric water demand. Their balance determines soil moisture and **Crop Water Stress**.
 
 In Malaysia's humid tropics, these couplings are especially visible: cloudy, wet spells suppress daytime maxima through shading and maintain high humidity, while wind bursts often accompany monsoon surges that simultaneously alter temperature and rainfall.
 
-**Diagnostic Framework**
+!!! info "Diagnostic framework"
 
 As you work through this notebook, look for recurring seasonal structure, short-term persistence from day to day, and how temperature, wind, and rain co-vary.
 
 However, short records can overstate extremes and inflate correlations simply because variables share the same seasonal cycle. Base conclusions on longer records approaching the 30-year climatological normal if you wish to characterize a site's climate. Examine whether relationships persist across different seasons, not just in seasonal averages.
-"""
+""", open=show_notes)
 
-# ╔═╡ 62e69d33-1902-47a2-8d6d-9401a0ff065d
+# ╔═╡ 6152f922-0342-48bb-bf48-c6206c6a3cf6
+details(
+"Control instructions",
+md"""
+Here is the main controls. Here you can:
+- Hide or reveal all section notes.
+- Adjusts the width of all plots can particularly improve reading of autocorrelation and running-mean heatmaps. Make it wider if you notice the plots look "cramp" with many years plotting.
+- You can choose to save all plots (figures) as `PNG` format, or lock this feature to prevent accidental saving, such as when you rerun a cell.
+""", open=show_notes)
+
+# ╔═╡ fa2a3c3c-6aa1-40e7-b8a2-ec15ba4069cb
 begin
-	md"""
-	$(PlutoUI.LocalResource("./images/weather_interactions.svg"))
-	**Fig. 1.** Weather variable interactions and their agricultural impacts.
-	"""
-end |> WideCell(; max_width=1000)
+	width_input = @bind width PlutoUI.Slider(700:100:2400; default=700, 		                                     	     show_value=true)
+	savefigs_btn = @bind savefigs PlutoUI.CounterButton("⤵️ Save Now")
+
+	@htl("""
+		<table cellpadding="0" cellspacing="0" class="load-table">
+		<tr>
+			<th>Figure control</th>
+			<th>Selection</th>
+		</tr>
+		<tr>
+			<td>Width of all charts (in pixels)</td>
+			<td><div class="data-display">$(width_input)</div></td>
+		</tr>
+
+		$(if !locksave
+			@htl("""
+			<tr>
+				<td>Save all figures</td>
+				<td>$(savefigs_btn)</td>
+			</tr>
+			""")
+		end)
+		 
+		</table>
+	""")
+end
 
 # ╔═╡ 5368f1ab-afd4-467d-82a5-d79b47676cd3
 md"""
-## 1. Weather Input
+## 2. Weather Input
 """
 
 # ╔═╡ bef2592b-048f-4407-a26b-58444953a85f
+details(
+"Weather input instructions",
 md"""
-Here you can either: 1) generate or 2) use actual daily weather.
+You can choose to use either generated or actual weather.
+0. Generated weather
+    - The model creates weather stochastically, so the results change every time unless you set a fixed seed.
+    - Uses the `data.csv` file in the site folder to generate weather. This file contains monthly distribution parameters. This file must be available at the site folder.
+0. Observed weather
+    - Uses real daily data from `wthr.csv` in the site folder. This daily weather file must be available at the site folder.
 
-Option 1 will stochastically (randomly) generate weather, so daily weather will be different each time you generate the weather, unless you set the `seed` to a fixed value (see below).
-
-**Site folder name:** 
-Specifies which location's data to use. For generated weather, the data file is `data.csv`. This file contains the monthly values for the distribution parameters. For observed (actual) weather, the data file is the daily weather (`wthr.csv`).
-
-**Seed number:**
-Use -1 for random generation (different each time you generate).
-Use positive values for reproducible results (same output every time).
-"""
+**Seed number**:
+- -1 (or any negative values): random output each time
+- a positive value will produce deterministic output (same results every run). Fix the seed value if you always want the same exact generated weather each time.
+""", open=show_notes)
 
 # ╔═╡ 3402bb40-b3d7-11f0-a219-b375107af3f7
 begin
@@ -140,6 +225,15 @@ begin
 			.load-table td:last-child {
 			    border-right: none;
 			}
+			.hg-badge {
+			    color: #8a2525;
+			    background-color: #f2f1ec;
+			    padding: 3px 8px;
+			    border-radius: 4px;
+			    border: 1px solid #8a2525;
+			    font-family: monospace;
+			    font-size: 12px;
+			}
 			</style>
   		    <table cellpadding="0" cellspacing="0" class="load-table">
 			<tr>
@@ -150,9 +244,13 @@ begin
 				<td>Generate or use observed weather?</td>
 			 	<td><div class="data-display">$(usetype_input)</div></td>
 			</tr>
-			<tr><td colspan=2><b>📂 Current location:</b> <span style="color: #8a2525; background-color: #f2f1ec; padding: 3px 8px; border-radius: 4px;">$(pwd())</span></td></tr>		
 			<tr>
-				<td>Site folder name (where the site's weather data file is located)</td>
+			     <td colspan=2>
+			 		<b>📂 Current location:</b> <span class="hg-badge">$(pwd())</span>
+			     </td>
+			</tr>		
+			<tr>
+				<td>Site folder name (location of the site's weather data file)</td>
 			 	<td>$(data_input)</td>
 			</tr>
 			<tr>
@@ -198,61 +296,7 @@ let
 
 	Markdown.parse("""
 	# $(prefix)$(sname)
-	""")
-end
-
-# ╔═╡ 0c287c83-2dad-4303-a9fd-343c821468b0
-md"""
-## 2. Master Control
-"""
-
-# ╔═╡ 6152f922-0342-48bb-bf48-c6206c6a3cf6
-md"""
-Adjust the width of all plots can particularly improve reading of autocorrelation and running-mean heatmaps. Make it wider if you notice the plots look "cramp" with many years plotting.
-
-You can choose to save all plots as `PNG` format, or lock this feature to prevent accidental saving, such as when you rerun a cell.
-"""
-
-# ╔═╡ 5b0cc9ca-f269-4d74-9968-afb479cd2969
-begin
-	locksave_check = @bind locksave PlutoUI.CheckBox(default=true)
-	
-	@htl("""
-		<table cellpadding="0" cellspacing="0" class="load-table">
-		 <tr>
-		 	<td>Lock figures saving? (Tick for no saving)</td>
-			<td>$(locksave_check)</td>
-		 </tr>
-		</table>
-	""")
-end
-
-# ╔═╡ fa2a3c3c-6aa1-40e7-b8a2-ec15ba4069cb
-begin
-	width_input = @bind width PlutoUI.Slider(700:100:2400; default=700, 		                                     	     show_value=true)
-	savefigs_btn = @bind savefigs PlutoUI.CounterButton("⤵️ Save Now")
-
-	@htl("""
-		<table cellpadding="0" cellspacing="0" class="load-table">
-		<tr>
-			<th>Control</th>
-			<th>Selection</th>
-		</tr>
-		<tr>
-			<td>Width of all charts (in pixels)</td>
-			<td><div class="data-display">$(width_input)</div></td>
-		</tr>
-
-		$(if !locksave
-			@htl("""
-			<tr>
-				<td>Save all figures</td>
-				<td>$(savefigs_btn)</td>
-			</tr>
-			""")
-		end)
-		 
-		</table>
+	MsiaGen © 2025 Christopher Teh Boon Sung. All rights reserved.
 	""")
 end
 
@@ -266,138 +310,14 @@ md"""
 ### 3.1 Distribution
 """
 
-# ╔═╡ 3dc912ad-cf32-42a2-a6b6-a4b21c122c7a
-md"""
-**Histogram:** Shows the spread of air temperature values. Values that occur more frequently will have increasingly tall bars, whereas rare values will have shorter bars.
-
-0. Shape of histogram: Is it normal (bell-shaped), skewed, or bimodal?
-0. Mean (`μ`): The average minimum temperature
-0. Standard deviation (`σ`): How much temperatures vary
-0. 1st order autcorrelation (`r`) and skewness (`γ`): Statistical measures of the distribution shape. Note `r` here is not the same as the `r` used later in cross‑variable scatterplots.
-
-**Time series with seasonal fit (two‑harmonic Fourier model)**:
-- `ω` = 2π/365, and `t` = day of year
-- The constant term is the annual mean
-- The `cos(ωt)` and `sin(ωt)` terms capture the **annual** cycle
-- The `cos(2ωt)` and `sin(2ωt)` terms capture the **semi-annual** variations
-
-**Important:** The magnitude of the coefficients indicates the strength of each cycle:
-
-- **For the annual cycle:** The amplitude is `√(a₁² + b₁²)` where `a₁` and `b₁` are the coefficients of `cos(ωt)` and `sin(ωt)`
-- **For the semi-annual cycle:** The amplitude is `√(a₂² + b₂²)` where `a₂` and `b₂` are the coefficients of `cos(2ωt)` and `sin(2ωt)`
-
-**What this means:**
-
-- **Larger coefficients** (in absolute value) = stronger seasonal cycle at that frequency
-- If annual coefficients are large and semi-annual coefficients are small, the location has one distinct warm/cool season per year
-- If semi-annual coefficients are also large, there may be two warm/cool periods per year (*e.g.*, some tropical locations have bimodal temperature patterns)
-
-**Tip:** Compare the relative magnitudes when looking at different sites. A site with weak seasonal variation will have smaller coefficients than a site with strong seasons.
-
-**Violin plots by month:** Shows the distribution shape for each month. Imagine looking at a histogram chart rotated 90 degrees.
-
-- Vertical axis = temperature. Vertical extent shows the range; internal markers typically indicate the median and quartiles.
-- Width at any temperature value shows relative frequency (probability density): wider = more common; narrow “necks” = rarer values.
-- Read violins for symmetry/skew, spread (how concentrated vs dispersed a month is), and the presence of outliers.
-
-**Questions:**
-
-0. Does your site show strong seasonal variation or relatively constant temperatures?
-0. Is the temperature distribution symmetric or skewed?
-"""
-
 # ╔═╡ eca15e5f-33bf-4837-98d3-9ba64c9fcdf3
 md"""
 ### 3.2 Autocorrelation
 """
 
-# ╔═╡ 245ca246-0aea-4b0a-a4bf-4c45e9ebfc4f
-md"""
-Autocorrelation plot shows how today's temperature relates to future temperatures.
-
-- Short lags (0-60 days): Strong correlation means temperature persists day-to-day
-- ~183 days: A spike here indicates semi-annual seasonality
-- ~365 days: A spike here indicates annual seasonality
-- 95% confidence interval (pink band): Values outside are statistically significant (p<0.05)
-
-**How to interpret the decay pattern:**
-
-0. **Temperature typically shows strong persistence:** Autocorrelation often remains significant for 30-90+ days because atmospheric conditions change gradually
-
-0. **Rate of decay matters:**
-   - **Slow decay** (stays high for 60+ days) → very stable, slowly changing conditions
-   - **Fast decay** (drops to confidence band in <30 days) → more variable, rapidly changing conditions
-
-0. **Look at the shape:**
-   - Smooth, gradual decline → persistent weather patterns
-   - Rapid drop then leveling → initial persistence followed by randomness
-
-**Important distinction:**
-
-- Statistical significance (outside pink band) ≠ practical predictability.
-- Meaningful persistence for daily temperature in Malaysia’s humid tropics is usually concentrated at short lags (order of days to a couple of weeks). Look at the `r` value. Should be r>0.5.
-- Long persistence (60+ days significance) indicates the climate has strong "memory" and stable patterns
-
-**Why it matters:**
-
-- Strong 'memory' is high correlation at long lags
-- Longer persistence → fewer extreme day-to-day changes
-- Shows whether air temperature is stable and predictable
-- Shows whether any seasonal transitions are more gradual
-- Allows better planning for short-term activities
-- Indicate whether any extreme day-to-day fluctuations
-- Indicate how strongly current conditions influence weather weeks into the future
-
-**Questions:**
-
-0. How many days ahead can you predict temperature with reasonable confidence? *Hint:* At what lag does the autocorrelation become insignificant for this site?
-0. Is there a clear semi-annual and annual cycles (spike at ~183 and ~365 days, respectively)?
-0. Why might there be a semi-annual and an annual cycle?
-"""
-
 # ╔═╡ 32d4784a-d59b-4f6a-9f46-c53dc93f40e7
 md"""
 ### 3.3 Seasonal Patterns
-"""
-
-# ╔═╡ e675760c-c2c7-4743-a96a-18b72a455435
-md"""
-**What is a running mean?**: A running mean (or moving average) calculates the average of the current day plus the previous days in the window. For example, a 7-day running mean averages today's value with the previous 6 days (7 days total). This smooths out day-to-day fluctuations to reveal broader patterns.
-
-**What to look for**:
-- **Color patterns**: Cooler (blue) versus warmer (red) periods
-- **Consistency across years**: Do the same calendar days show similar patterns year after year?
-- **Anomalies**: Unusual hot or cold spells that stand out from the typical pattern
-- **Timing of transitions**: When do seasons shift from cool to warm and vice versa?
-
-**The Window Size Slider - What it does**:
-1. **Smaller window (*e.g.*, 1-3 days)**:
-   - Less smoothing, closer to actual daily values
-   - Shows more day-to-day variation and short-term weather events
-   - Heatmap appears more "noisy" with rapid color changes
-   - Useful for identifying brief extreme events (cold snaps, heat waves)
-
-2. **Larger window (*e.g.*, 15-30 days)**:
-   - More smoothing across time
-   - Emphasizes longer-term patterns and seasonal trends
-   - Heatmap appears more uniform with gradual color transitions
-   - Better for seeing the "big picture" seasonal cycle
-   - Individual weather events get averaged out
-
-**Interpretation tip**: 
-- Larger windows = more smoothing = clearer seasonal patterns but less detail
-- Smaller windows = less smoothing = more detail but harder to see overall trends
-- **Caution**: this notebook uses trailing *n*-day running mean. Because of this, apparent peaks are delayed by approximately `(n–1)/2` days. Larger `n` ⇒ larger apparent delay. Example: `n`=28 → ~14‑day delay.
-
-**Why it matters**: 
-- Reveals seasonal timing and year-to-year consistency
-- Helps identify optimal planting/harvesting windows
-- Shows if seasons are shifting earlier or later across years
-
-**Questions**:
-0. Adjust the window size. How does the pattern change?
-0. Are there specific weeks that are consistently cooler or warmer across all years?
-0. Do you see any years with unusual patterns (anomalous seasons)?
 """
 
 # ╔═╡ fbce7664-c0de-496d-be00-10f76dea43b6
@@ -425,55 +345,14 @@ md"""
 ### 4.1 Distribution
 """
 
-# ╔═╡ a9987d0b-ca5e-4063-8ba7-128021588710
-md"""
-In Malaysian humid, tropical sites, daytime maxima are strongly modulated by cloud cover and wetness through shading and evaporative cooling.
-
-**Compare with minimum temperature**:
-- Is the standard deviation larger? (Maximum temps usually vary more)
-- Is the distribution shape different?
-- What's the typical diurnal range (difference between max and min)?
-
-**Questions**:
-0. Do maximum temperatures show more variability than minimum temperatures? Why?
-0. How does cloud cover affect maximum temperatures?
-"""
-
 # ╔═╡ 462b1e0c-1232-4b2e-9365-d01b2e28be0d
 md"""
 ### 4.2 Autocorrelation
 """
 
-# ╔═╡ c87244ea-48b5-4766-ab5c-52b637ed13a9
-md"""
-**Look for**:
-- Similar patterns to minimum temperature, but possibly weaker correlation
-- Does maximum temperature have more or less "memory" than minimum temperature?
-
-**Questions**:
-0. Based on the autocorrelation plots for both minimum (3.2) and maximum temperature (4.2), which variable has stronger 'memory'
-0. How does temperature 'memory' relate to physical drivers, such as nighttime cooling vs. daytime solar heating?
-"""
-
 # ╔═╡ 1e557802-e526-42dd-b9a2-63839e867eea
 md"""
 ### 4.3 Seasonal Patterns
-"""
-
-# ╔═╡ 7672cf1c-0219-45ea-ac50-8d724cb25483
-md"""
-**Compare with section 3.3**:
-- Are the hottest times of year the same as when minimum temperatures peak?
-- Is there a lag between maximum and minimum temperature seasons?
-
-**Remember**: 
-- Larger windows = more smoothing = clearer seasonal patterns but less detail
-- Smaller windows = less smoothing = more detail but harder to see overall trends
-- **Caution**: this notebook uses trailing *n*-day running mean. Because of this, apparent peaks are delayed by approximately `(n–1)/2` days. Larger `n` ⇒ larger apparent delay. Example: `n`=28 → ~14‑day delay.
-
-**Questions**:
-0. Compare the heatmaps in Section 3.3 and 4.3. Do the hottest times of the year (red periods in 4.3) coincide with the warmest nights (red periods in 3.3), or is there a noticeable shift in timing?
-0. Are there more variability in daily maximum temperatures than minmum temperatures?
 """
 
 # ╔═╡ b7a4e62b-a2ad-407b-91a3-fdea7843d14f
@@ -501,129 +380,14 @@ md"""
 ### 5.1 Distribution
 """
 
-# ╔═╡ a110527e-7fdf-4167-84e4-3c440a91f016
-md"""
-Daily mean wind speeds are typically right‑skewed and are often better described by a Weibull distribution rather than a normal curve.
-
-**What to look for**:
-- **Mean wind speed**: Is this a calm or windy location?
-- **Distribution shape**: Wind speed is often right-skewed (occasional high winds)
-- **Seasonal pattern**: Look at the monthly violin plots
-
-**Why wind speed matters**:
-1. **Disease Management**:
-   - Tropics have high humidity and warm temperatures year-round
-   - **Low wind + high humidity = ideal conditions for fungal diseases**
-   - Stagnant air allows fungal spores to settle and infect plants
-   - Higher wind speeds improve air circulation, reducing leaf wetness duration
-
-2. **Evapotranspiration and Water Use**:
-   - Wind increases evapotranspiration rates
-   - Low wind = lower water demand (less irrigation needed)
-   - High wind = higher water stress (more irrigation required)
-   - Important for water management in plantations
-
-3. **Pollination**:
-   - For wind-pollinated crops, low wind periods can reduce pollination efficiency and fruit set
-   - Timing of low wind periods affects yield
-
-4. **Microclimate Control**:
-   - Wind affects temperature and humidity around crops
-   - In dense plantations (oil palm, rubber), low wind creates hot, humid microclimates
-   - Can stress plants or promote disease
-
-5. **Drying and Post-Harvest**:
-   - Paddy (rice) and other crops need drying after harvest
-   - Wind speeds affect drying rates
-   - Low wind = slower drying = higher risk of spoilage
-
-6. **Pest Dispersal**:
-   - Wind can spread pests (*e.g.*, bagworms in oil palm)
-   - Understanding wind patterns helps predict pest outbreaks
-
-**Questions**: 
-0. Based on the violin plot (bottom panel), which months show the lowest mean wind speeds, and what agricultural risks might this present (refer to Why wind speed matters)?
-0. Are there recurring breezy periods, where wind speeds are above 3 to 4 m s⁻¹?
-0. Plot several sites to determine how does the location of a site affect the typical daily wind speeds. *Hint*: compare coastal vs inland sites, Peninsular vs East Malaysia sites.
-"""
-
 # ╔═╡ fb1f648c-5d2e-434d-b456-1d2b08f193e8
 md"""
 ### 5.2 Autocorrelation
 """
 
-# ╔═╡ 269c9adf-2597-46cd-a7c7-297bc9c44681
-md"""
-Wind speed shows **much weaker autocorrelation** than temperature—often dropping into the confidence band within just a few days.
-
-**Why wind has less "memory"**:
-- Wind is driven by **pressure differences** that change rapidly (weather systems, local heating/cooling)
-- Temperature changes gradually due to thermal inertia (land/ocean heat up and cool down slowly)
-- Daily wind speeds can vary dramatically from one day to the next
-
-**What to look for**:
-
-0. **Short-lag behavior (0-10 days)**:
-   - Does autocorrelation drop to near zero quickly (within 5-10 days)?
-   - This is normal for wind—it means yesterday's wind doesn't tell you much about next week's wind
-   - Compare this to your temperature autocorrelation—wind should be much weaker
-
-0. **Seasonal signals**:
-   - **Spike near 365 days**: Indicates **annual wind cycle** (one distinct pattern per year)
-   - **Spike near 183 days (~6 months)**: Indicates **semi-annual wind cycle** (two distinct patterns per year)
-   - **Both spikes present**: Your site has **bimodal wind patterns**—common in monsoon regions!
-   
-   **What bimodal patterns mean**:
-   - Two wind seasons per year (*e.g.*, Northeast and Southwest monsoons)
-   - Wind reverses direction or changes intensity twice annually
-   - Example: Malaysia has NE monsoon (~Nov-Mar, windier) and SW monsoon (~May-Sep, calmer)
-   - Important for planning: you have two predictable seasonal transitions
-
-0. **Overall pattern**:
-   - **Rapid decay then flat**: Typical pattern—initial weak persistence, then essentially random
-   - **Consistently low**: Wind is highly variable with little predictability
- - **Small spikes at 183/365**: Weak but predictable seasonal patterns overlaid on daily variability
-
-
-**Why this matters for agriculture**:
-
-- **Low persistence = high uncertainty**: Cannot reliably predict wind conditions more than a few days ahead
-- **Plan for variability**: 
-  - Irrigation scheduling should account for unpredictable evapotranspiration rates
-  - Spraying operations need flexible timing (wait for calm conditions)
-  - Wind-sensitive crops (*e.g.*, banana, papaya) face unpredictable stress
-
-- **If you see seasonal patterns** (365-day spike):
-  - Your region has predictable seasonal wind shifts (good for planning)
-  - Example: Monsoon regions can anticipate windier/calmer seasons
-  - Useful for wind-pollination or field operations like drying (paddy)
-
-**Questions**:
-0. How does wind autocorrelation at this current site compare to temperature autocorrelation?
-0. Do you see one spike (~365 days) or two spikes (~183 and ~365 days)? Why might wind speeds have only one spike or two spikes in a year?
-0. If wind is highly unpredictable (*i.e.*, very low ACF everywhere), what management strategies would you recommend for wind-sensitive operations?
-0. The wind-rainfall relationship description mentions coastal versus inland sites. What key wind-related mechanism might be unique to a coastal site?
-"""
-
 # ╔═╡ 1429b63b-8122-4351-9407-72272e782b6c
 md"""
 ### 5.3 Seasonal Patterns
-"""
-
-# ╔═╡ 5630d61f-d01a-4cf4-b569-0cc0bc00e66f
-md"""
-**Look for**:
-- **Monsoon patterns**: Seasonal wind shifts
-- **Land-sea breeze patterns**: In coastal vs inland areas
-
-**Remember**: 
-- Larger windows = more smoothing = clearer seasonal patterns but less detail
-- Smaller windows = less smoothing = more detail but harder to see overall trends
-- **Caution**: this notebook uses trailing *n*-day running mean. Because of this, apparent peaks are delayed by approximately `(n–1)/2` days. Larger `n` ⇒ larger apparent delay. Example: `n`=28 → ~14‑day delay.
-
-**Questions**:
-0. When do wind speeds tend to be high and low at this site?
-0. Even when wind speeds are at the highest, are they harmful or beneficial for agriculture. Explain your answer.
 """
 
 # ╔═╡ 1c50fe2b-23df-4ba1-8d7e-9a67850f5c9a
@@ -651,58 +415,9 @@ md"""
 ### 6.1 Distribution
 """
 
-# ╔═╡ 0999ebf3-6b38-4214-be53-f118c67b7c95
-md"""
-**Key statistics**:
-- **Total annual rainfall**: Indicates how much rainfall in a year. Note: 1 mm rain means 1 L (or 1 kg) of water over 1 m² ground area. So, 2000 mm annual rainfall means 2000 L of water has fallen over 1 m² ground area in a year. 
-- **Wet days**: Indicates how many days per year have measurable rain
-- **PWW** (Probability Wet-Wet): If today is wet, what is the probability tomorrow will also be wet (*i.e.*, probability of two consecutive wet days)
-- **PWD** (Probability Wet-Dry): If today is dry, what is the probability tomorrow will be wet
-- **Mean daily rainfall**: Average amount on rainy/wet days
-
-**Histogram interpretation**:
-- **First few bars (left of chart)**: Represents dry days and days with light rains, (they are typically 50-80% of days)
-- **Long right tail**: Occasional/rare heavy rainfall events
-
-**Questions**:
-0. What percentage of annual rainfall comes from extreme events versus light rain?
-0. Why is it important in agriculture to know the distribution of wet and dry spell lengths?
-0. Extreme heavy rain events occur rarely. So, if they are relatively rare, are they important in agriculture, compared to light rain events? Explain.
-"""
-
 # ╔═╡ d69144f5-2aaa-4fb3-a654-02c86aa1126a
 md"""
 ### 6.2 Persistence
-"""
-
-# ╔═╡ 1ed28912-0a8c-4642-96e2-40a32a83c28c
-md"""
-**Spell distributions**:
-
-Wet spell distribution shows the frequency of consecutive rainy days of different lengths (*e.g.*, how often do 3-day, 7-day, or 14-day wet periods occur?). Dry spell distribution shows the same for consecutive dry days.
-
-**Why it matters**:
-* Long dry spells → drought risk, crop water stress
-* Long wet spells → flooding, delayed field operations, increased disease pressure
-
-**Transition probability matrix (Markov chain)**: Shows probability of tomorrow's state given today's state.
-* **Read as**: "If today is [row state], tomorrow will be [column state] with probability [value]"
-* **Diagonal values** (*e.g.*, Dry→Dry, Light→Light): Persistence probability—how likely a state continues
-* **Off-diagonal values**: Transition probability—how likely states change
-
-High Dry→Dry persistence means dry spells last longer, which can become critical for irrigation scheduling and planting windows.
-
-**Key probabilities**:
-* **PWW** (Wet→Wet): Probability wet day follows wet day
-* **PWD** (Dry→Dry): Probability dry day follows dry day
-
-Higher PWD lengthens dry spells; higher PWW lengthens wet spells.
-
-**Questions**:
-0. Why is knowing rainfall persistence important in agriculture?
-0. Examine "Dry→[rain intensity]" transitions: When rain breaks a dry spell, is it typically light or can it be heavy? What are the implications for runoff and soil erosion?
-0. Using the transition matrix, what is the total probability that a "Light rain" day (Today's State) will be followed by any type of wet day (Light, Moderate, Heavy, or Very Heavy)?
-0. Suppose PWW increases from 0.55 to 0.75, while PWD decreases from 0.20 to 0.10. Explain how this specific shift in transition probabilities alters the agricultural risk profile for the area, focusing on water storage management and the potential for alternating flood and drought stress within the same season.
 """
 
 # ╔═╡ c0f892f0-f11c-4354-9699-577b4c13b2d4
@@ -710,49 +425,9 @@ md"""
 ### 6.3 Monthly Contributions
 """
 
-# ╔═╡ 78c3cc81-0828-46d6-a9e6-88f25982a65f
-md"""
-Peninsular and East Malaysia sites often show monsoon‑related unimodal or bimodal rainfall contributions, with timing that differs between coasts because of the Northeast and Southwest Monsoons.
-
-**What to look for**:
-- **Uniform line**: 8.33% per month (even distribution)
-- **Bars above this line**: Wetter months
-- **Bars below this line**: Drier months
-
-**Common patterns**:
-- **Unimodal**: One rainy season
-- **Bimodal**: Two rainy seasons (common in tropics near equator)
-
-**Questions**:
-0. Does this site have distinct wet and dry seasons? Refer also to Section 6.6.
-0. When does this site tend to experience distint periods of high and low rainfalls? Again, refer also to section 6.6.
-0. Explain the impact of seasonal rainfall distribution on agriculture.
-"""
-
 # ╔═╡ e8e881ba-96fb-41b3-8b5b-a27151635ee9
 md"""
 ### 6.4 Monthly Variability
-"""
-
-# ╔═╡ 27df242c-4752-4898-91cc-24832865827b
-md"""
-**IQR/Median Ratio) - What it measures**:
-The ratio of interquartile range (IQR) to median quantifies rainfall predictability on a relative scale:
-* **Low IQR/Median** (<0.5): Consistent rainfall year-to-year → more predictable
-* **High IQR/Median** (>1.0): High year-to-year variability → unpredictable
-
-**Why IQR/Median instead of coefficient of variation (CV)?**
-Rainfall data are highly skewed (many low values, few extreme highs). CV assumes normally distributed data and is sensitive to outliers. IQR/Median is non-parametric and robust to skewness, making it more appropriate for rainfall.
-
-**Color scale**: Green (predictable) → yellow → red (highly variable)
-
-**Why it matters**:
-High variability means farmers face greater uncertainty. A month with median rainfall of 200 mm but high IQR could deliver 50 mm (crop failure) or 400 mm (flooding) in different years. Management strategies must account for this range, not just the average.
-
-**Questions**:
-0. How does unpredictable rainfall harm agriculture? *Hint*: Consider: (a) planting timing decisions, (b) crop selection, (c) investment in irrigation/drainage infrastructure.
-0. Compare variability during wet versus dry season months. Which season is more predictable, and why might this matter for cropping calendars?
-0. If rainfall is highly unpredictable (high IQR/Median), what risk management strategies would you recommend? *Hint*: Consider: crop diversification, insurance, water storage, drought-tolerant varieties.
 """
 
 # ╔═╡ 13429b2e-dac8-46ee-85c4-143945d07074
@@ -760,48 +435,9 @@ md"""
 ### 6.5 Max. Dry Spell Length
 """
 
-# ╔═╡ 893df8c0-d71f-4b45-9de0-674975974403
-md"""
-**What to look for**:
-* **Top panel**: Maximum dry spell length each year vs. critical threshold (red dashed line, set here at 14 consecutive dry days—the approximate point where crop water stress begins)
-* **Bottom panel**: Timing of when maximum dry spells occur each year
-
-Compare with sections 6.3 (seasonal rainfall patterns) and 6.4 (spell distributions) to see if long dry spells consistently occur during specific months or are randomly distributed.
-
-**Application**: 
-
-Critical for irrigation scheduling, drought preparedness, and assessing planting window risk. If maximum dry spells frequently exceed the threshold during the growing season, supplemental irrigation or drought-tolerant varieties become necessary.
-
-**Questions**:
-0. If the maximum dry spell shown in the Top Panel occurred during a critical crop growth stage, would deficit irrigation (light, strategic watering) or full irrigation be more appropriate? Consider the Mean spell length from the Dry Spell Distribution chart (6.2).
-
-0. The 14-day threshold used here is generic. How would you determine the actual critical threshold for a specific crop? *Hint*: consider rooting depth, growth stage sensitivity, soil water holding capacity.
-
-0. Irrigation clearly benefits crops, so why isn't it widely practiced? Discuss: (a) economic constraints (capital, energy, labor costs), (b) water availability and rights, (c) trade-offs between irrigation methods (flood, sprinkler, drip), and (d) risk of over-irrigation (waterlogging, salinization).
-"""
-
 # ╔═╡ d3b95b82-3786-4c19-a135-c4c85dbc4ff1
 md"""
 ### 6.6 Seasonal Patterns
-"""
-
-# ╔═╡ 8b0504e1-f480-4191-a4f4-cfe236bee4ef
-md"""
-**_n_-day running sum heatmap**:
-Shows accumulated rainfall over rolling *n*-day windows. Blue/dark indicates heavy rainfall periods; yellow/light indicates dry periods.
-
-**What to look for**:
-- Consistency of wet/dry timing across years
-- Seasonal patterns and their variability
-- Extreme events (very dark blue cells)
-
-**Remember**:
-- **Apparent delay**: Trailing sums shift peaks by ~`(n–1)/2` days. Example: `n`=28 causes ~14-day delay in apparent timing.
-- **Window size effects**: Larger windows accumulate more rainfall and always appear "wetter." So, do not compare absolute values between different `n` values. Instead, compare timing patterns within one window size, then test sensitivity by varying `n`.
-
-**Questions**:
-1. What periods consistently appear wet or dry across years? Compare with section 6.3.
-2. How does knowing wet/dry periods help farmers plan operations?
 """
 
 # ╔═╡ f7ceb2cd-bb36-47dc-b3d3-4952149ff453
@@ -829,78 +465,9 @@ md"""
 ### 7.1 Temperature-Wind-Rainfall
 """
 
-# ╔═╡ 58e9b26d-d62e-4b9e-976f-d1b49a90fc16
-md"""
-**Temperature-Wind-Rainfall Relationships**
-
-**Correlation coefficients (`r`)**:
-* `r` ≈ –1: strong negative relationship
-* `r` ≈ 0: weak or no relationship  
-* `r` ≈ +1: strong positive relationship
-
-**Max Temperature vs Wind Speed**:
-Relationship is location-dependent. Coastal sites: wind may bring cooler marine air (negative correlation). Inland sites: wind may advect warm or cold air masses depending on source region.
-
-**Wind Speed vs Rainfall**:
-Two competing mechanisms:
-* **Negative correlation**: Calm conditions favor localized convective rainfall development
-* **Positive correlation**: Large-scale storms bring both wind and heavy rain simultaneously
-
-Which dominates depends on the site's rainfall regime (convective vs. frontal/monsoon-driven).
-
-**Normalized seasonal plot**:
-Scales all three variables to 0–1 range for direct comparison. Look for which variables peak together (in-phase) versus offset timing (out-of-phase), revealing coupling patterns discussed in Fig. 1.
-
-**Questions**:
-0. Why do temperature and rainfall often show negative correlation? *Hint*: consider cloud cover and evaporative cooling.
-0. Compare wind-rainfall relationships at one coastal versus one inland site. Are correlations weaker or stronger inland? What drives the difference?
-0. In the normalized plot, do temperature and rainfall peak in the same month(s)?
-"""
-
 # ╔═╡ ff9b154e-7440-4095-ae5d-490c632714b4
 md"""
 ### 7.2 Rainfall Anomaly
-"""
-
-# ╔═╡ 0ac6a248-ea47-4274-a043-3923aefef296
-md"""
-**Definition**: 
-
-Anomaly = Observed rainfall − Climatological average (for that location and time period)
-
-This measures **departure from normal** (that is, deviation from typical rainfall for that site), not whether rainfall is sufficient for crops.
-
-**What it tells you**:
-- **Positive anomaly**: Wetter than usual for that location/season
-- **Negative anomaly**: Drier than usual for that location/season
-- **Zero anomaly**: Rainfall matches the long-term average
-
-**Key distinction**:
-* **Anomaly** answers: "Is this wetter/drier than typical?"
-* **Deficit/surplus** answers: "Is rainfall enough to meet water demand (ET₀)?"
-
-A location can have **positive rainfall anomaly** (wetter than usual) but still experience **water deficit** if evaporative demand exceeds rainfall. Conversely, a **negative anomaly** (drier than usual) may still meet crop needs if demand is low.
-
-**Why anomalies matter**:
-- Removes location bias (100 mm is "wet" in arid zones, but "dry" in rainforest)
-- Reveals unusual conditions that stress ecosystems/agriculture
-- Enables comparison across different climates
-
-**Reference period dependency**:
-
-Anomalies depend on what you define as "normal." Standard practice uses 30-year climatological periods (*e.g.*, 1991–2020). Short datasets produce unreliable anomalies since the "average" itself may not represent true climate.
-
-**Tip**:
-
-Set the window size that matches the crop’s growing length (*e.g.*, 30-35 days for leafy vegetables) or sensitive stage length (*e.g.*, 30–45 days for early establishment versus 60–90 days for reproductive and grain filling in many tropical annuals).
-
-
-**Questions**:
-0. The text distinguishes between Anomaly and Deficit/Surplus. Explain how a month could have a positive rainfall anomaly (wetter than usual) but still experience water deficit (crop water stress).
-0. Why might a +50 mm anomaly be severe in one location but minor in another?
-0. Are there any cycles of sustained wetter and drier periods? How long do these cycles typically last?
-0. How might these sustained wet/dry cycles affect planting decisions or crop selection for farmers?
-0. Refer to the Rainfall Anomaly Over Time chart (second panel). Why does positive rainfall anomaly change more slowly than negative rainfall anomaly? *Hint*: Refer to section 6.1.
 """
 
 # ╔═╡ b63dacdf-b6f1-4844-b1ea-b0944f2ac206
@@ -920,126 +487,13 @@ end
 
 # ╔═╡ f9393768-1fad-4327-ab2f-4b2221b92bf5
 md"""
-### 7.3 Soil Water Storage
+### 8.1 Soil Water Storage
 """
 
-# ╔═╡ 1b871b02-3dbd-4388-b5ee-d9ab39f5e7b9
+# ╔═╡ e02ebad0-f2a0-42e5-a42e-16341b675d82
 md"""
-Daily soil moisture is estimated using a water balance approach:
-* **Inputs**: Rainfall (water added to soil)
-* **Outputs**: Reference evapotranspiration (ET₀, calculated from temperature, humidity, wind, radiation, and latitude using [FAO‑56 Penman–Monteith] (https://www.fao.org/4/x0490e/x0490e06.htm) method)
-* **Daily change**: Soil storage increases with rainfall, decreases with ET₀
-
-**Available Water Capacity (AWC)**:
-
-AWC represents the soil's maximum water storage, which is the difference between field capacity (water held after drainage) and permanent wilting point (where plants can no longer extract water). Think of AWC as the soil's "water tank capacity."
-
-* **200 mm m⁻¹ AWC**: A 1-m deep soil column can store 200 L of plant-available water
-* **50 mm m⁻¹ AWC**: Same volume stores only 50 L (*e.g.*, sandy soil vs. loam)
-
-AWC is estimated from soil texture (clay and sand content) using pedotransfer functions ([Saxton et al., 1986](https://doi.org/10.2136/sssaj1986.03615995005000040039x)).
-
-**Heatmap interpretation**:
-* **Dark blue**: Near field capacity (soil *water tank* nearly full)
-* **Light blue**: Adequate moisture (>50% AWC)
-* **Orange/light red**: Depleting (<50% AWC, stress begins)
-* **Dark red**: Severely dry (near wilting point)
-
-**What to look for**:
-* Frequency of full recharge events
-* Duration and timing of water stress periods (<30–50% AWC)
-* Recovery time after dry spells
-
-**Why it matters**:
-
-Soil water storage directly determines crop water availability. Most crops experience stress when storage drops below 30–50% AWC, triggering yield loss even before visible wilting. This metric integrates rainfall and atmospheric demand to show actual plant-available water, which is the most critical variable for agricultural decision-making.
-
-**Questions**:
-0. If planting a 90-day crop requiring adequate moisture throughout, which months offer the most reliable planting windows (fewest stress periods)?
-0. Compare the Soil Water Heatmap (7.3) with the Max Temperature Heatmap (4.3). Do periods of low soil water (red/orange) coincide with the highest maximum temperatures (red/darker periods)? What specific vulnerability does this combined heat and water stress pose to crops?
-0. How is evapotranspiration related to soil water balance? How is field evapotranspiration typically measured?
-0. Consider two adjacent fields managed under rainfed conditions: Field A has a sandy loam texture (10% clay, 65% sand), and Field B has a silty clay loam texture (35% clay, 10% sand). What is the AWC of the soil in Field A and B?
-0. Continuing the previous question, if the region experiences high rainfall persistence (high PWW), describe how the management strategy (*e.g.*, drainage needs, timing of nitrogen application) should differ between Field A and Field B.
+### 8.3 Notes
 """
-
-# ╔═╡ 4fe9fbb9-d10b-400f-96d9-05bf799f6879
-begin
-	@with_kw mutable struct CropProp
-		kc::Float64 = 0.5
-		dg::Float64 = 1.0
-		stress::Float64 = 0.5
-	end
-	
-	# Crop database
-	crop_db = OrderedDict(
-	    "Oil Palm" => CropProp(0.85, 1.5, 0.35),
-	    "Rice (vegetative)" => CropProp(1.05, 0.3, 0.50),
-	    "Rice (reproductive)" => CropProp(1.2, 0.3, 0.60),
-	    "Banana" => CropProp(1.1, 0.6, 0.45),
-	    "Pineapple" => CropProp(0.5, 0.3, 0.30),
-	    "Reference (grass)" => CropProp(1.0, 1.0, 0.40)
-	)
-
-	sel_croptype = @bind croptype PlutoUI.Select(collect(keys(crop_db)))
-	sand_input = @bind sand PlutoUI.Slider([5:1:95...], default=30, show_value=true)
-	clay_input = @bind clay PlutoUI.Slider([5:1:60...], default=30, show_value=true)
-	
-	@htl("""
-		<table cellpadding="0" cellspacing="0" class="load-table">
-		<tr>
-			<th>Crop/soil info</th>
-			<th>Values</th>
-		</tr>
-		<tr>
-			<td>Crop type</td>
-			<td><div class="data-display">$(sel_croptype)</div></td>
-		</tr>
-		<tr>
-			<td>Soil clay content (range 5-60%)</td>
-			<td><div class="data-display">$(clay_input)</div></td>
-		</tr>
-		<tr>
-			<td>Soil sand content (range 5-95%)</td>
-			<td><div class="data-display">$(sand_input)</div></td>
-		</tr>
-		</table>
-	 
-	""")
-end
-
-# ╔═╡ 52bd99e5-64c0-4520-a4bf-cb4c40dbc720
-begin
-	crop_prop = crop_db[croptype]
-
-	@bind init confirm(PlutoUI.combine() do Child
-		inputs = [
-			Child(:kc, PlutoUI.TextField(default=string(crop_prop.kc))),
-			Child(:dg, PlutoUI.TextField(default=string(crop_prop.dg))),
-			Child(:stress, PlutoUI.TextField(default=string(crop_prop.stress))),
-		]
-
-		@htl("""
-			<table cellpadding="0" cellspacing="0" class="load-table">
-			<tr>
-				<th>$(croptype)</th>
-				<th>Crop values</th>
-			</tr>
-			<tr>
-				<td>Crop coefficient Kc (>0)</td>
-				<td><div class="data-display">$(inputs[1])</div></td>
-			</tr>
-			<tr>
-				<td>Root depth (>0 m)</td>
-				<td><div class="data-display">$(inputs[2])</div></td>
-			</tr>
-			<tr>
-				<td>Drought sensitivity (0=least to 1=most sensitive)</td>
-				<td><div class="data-display">$(inputs[3])</div></td>
-			</tr>
-			</table>
-		""")
-	end; label="🔄 Update Soil Water Storage")
-end
 
 # ╔═╡ 63f62bc8-7673-49c5-ba40-18c3a1dbebcf
 TableOfContents()
@@ -1054,6 +508,33 @@ begin
 	
 	mths() = MONTHS[1:12]
 	
+	
+	@with_kw mutable struct CropProp
+		kc::Float64 = 0.5
+		dg::Float64 = 1.0
+		cr_awc::Float64 = 0.5
+		tbase::Float64 = 33.0
+		tcr::Float64 = 38.0
+		cwsd::Int = 14
+		chsd::Int = 14
+	end
+	
+
+	function qno(initial::Int=0)
+		i = initial
+		function q()
+			i += 1
+			i
+		end
+		q
+	end
+
+	
+	function doy_to_date(doy, year=2023)
+		date = Date(year, 1, 1) + Day(doy - 1)
+		"$(monthabbr(date)) $(day(date))"  # "Feb 15"
+	end
+
 	
 	function gen_weather(csv_path, seed)
 		isempty(csv_path) && return DataFrame()
@@ -1266,7 +747,272 @@ begin
 		(pww, pwd)
 	end
 		
+
+	function soil_water_storage(c, s, depth_in_meters=1)
+		total = c + s
+		if total <= 100.0
+			awc = est_awc(c, s)
+		else
+			awc = 0.1462   # AWC for default 30% clay and 30% sand
+			@warn "Clay + Sand cannot exceed 100%. AWC set to 146.2 mm."
+		end
+		awc * depth_in_meters * 1000   # convert to mm
+	end
+
+		
+	function stress_metrics(res, start_day, duration, t_base, t_cr, cwsd, chsd)
+	    nyears = length(res)
+	    
+	    # Water stress averages
+	    avg_rain = round(mean([r.rain for r ∈ res]), digits=1)
+	    avg_water_stress = round(mean([r.water_stress_days for r ∈ res]), digits=1)
+	    water_high_risk = count([r.water_stress_days > cwsd for r ∈ res])
+	    
+	    # Heat stress averages
+	    avg_heat_stress = round(mean([r.heat_stress_days for r ∈ res]), digits=1)
+	    avg_accum_heat = round(mean([r.accum_heat for r ∈ res]), digits=1)
+	    heat_high_risk = count([r.heat_stress_days > chsd for r ∈ res])
+	    
+	    data = DataFrame(
+	        Period = [r.year_span for r ∈ res],
+	        Rain_mm = [round(r.rain, digits=0) for r ∈ res],
+	        Water_Stress_Days = [r.water_stress_days for r ∈ res],
+	        Max_Dry_Spell = [r.max_dry for r ∈ res],
+	        Heat_Stress_Days = [r.heat_stress_days for r ∈ res],
+	        Max_Heat_Spell = [r.max_heat for r ∈ res],
+	        Accum_Heat = [round(r.accum_heat, digits=1) for r ∈ res],
+	        Severe_Heat_Days = [r.severe_heat_days for r ∈ res]
+	    )
+	    
+		 header = [
+			 ["Period", "Rainfall", "CWSD", "Max Dry", "CHSD", "Max Heat", 
+			  "Accum.", "Severe"],
+			 ["", "", "", "Spell", "", "Spell", "Heat", "Heat"],
+			 ["(year)", "(mm)", "(d)", "(d)", "(d)", "", "(°C·d)", "(d)"]
+		]
+		    
+	    end_day = start_day + duration
+	    if end_day > 365
+	        end_day -= 365
+	    end
+	    xtxt = (end_day <= start_day) ? " next year" : ""
+	    end_date = doy_to_date(end_day)
+	    start_date = doy_to_date(start_day)
+	    subtitle = "$(start_date) (DOY $(start_day)) → " *
+	               "$(end_date) (DOY $(end_day)$(xtxt))"
+
+		footnotes = [
+			(:column_label, 1, 1) => 
+		            "Each year between $(subtitle)",
+			(:column_label, 1, 2) => 
+		            "Total rainfall over $(duration)-day period",
+		    (:column_label, 1, 3) =>
+				"Cumulative Water Stress Days: total days with soil water below " *
+				"critical threshold. Values > $(cwsd) days " *
+				"tolerance) are highlighted in RED",
+		    (:column_label, 1, 4) => 
+		            "Longest consecutive dry spell (days with no rain)",
+		    (:column_label, 1, 5) => 
+		        "Cumulative Heat Stress Days: total days with " *
+				"Tmax >$(t_base) °C. Values > $(chsd) days " *
+				"are highlighted in ORANGE",
+		    (:column_label, 1, 6) => 
+		            "Longest consecutive heat spell (days above heat threshold)",
+		    (:column_label, 1, 7) => 
+		        "Accumulated heat stress: sum of (Tmax - $(t_base) °C) for " *
+				"all days exceeding threshold",
+		    (:column_label, 1, 8) => 
+		        "Total days with Tmax >$(t_cr) °C (severe heat stress)"
+		]	
+		
+	    risk = "🔢 No. of high-risk periods: " *
+			   "Water=$(water_high_risk), Heat=$(heat_high_risk)"
+	    
+	    # Highlighters: water stress and heat stress
+		hl_water = HtmlHighlighter(
+		    (data, i, j) -> (j == 3) && (data[i, j] > cwsd),
+		    ["color" => "#d32f2f", "font-weight" => "bold", 
+		     "background-color" => "lemonchiffon"]
+		)
+		
+		hl_heat = HtmlHighlighter(
+		    (data, i, j) -> (j == 5) && (data[i, j] > chsd),
+		    ["color" => "#f57c00", "font-weight" => "bold",
+		     "background-color" => "lemonchiffon"]
+		)
+		
+		pt = pretty_table(
+	        HTML, data; backend=:html,
+	        column_labels=header,
+	        footnotes=footnotes,
+	        highlighters=[hl_water, hl_heat],
+	        alignment=repeat([:c], ncol(data)),
+	        style = HtmlTableStyle(;
+	            first_line_column_label=[
+	                "font-weight"=>"normal",
+	                "text-align"=>"center",
+	                "font-size"=>"10pt",
+	                "background-color"=>"#546e7a",
+	                "color"=>"white",
+					"padding-top"=>"0",
+					"padding-bottom"=>"0",
+	            ],
+	            column_label=[
+	                "font-weight"=>"normal",
+	                "text-align"=>"center",
+	                "font-size"=>"10pt",
+	                "background-color"=>"#546e7a",
+	                "color"=>"white",
+					"padding-top"=>"0",
+					"padding-bottom"=>"0",
+	            ],
+	            table=[
+	                "font-size"=>"11pt",
+					"font-family"=>"monospace"
+	            ],
+				stubhead_label=[
+	                "background-color"=>"#546e7a",
+	                "color"=>"white",
+				],
+				summary_row_label=[
+	                "background-color"=>"#546e7a",
+	                "color"=>"white",
+				],
+				summary_row_cell=[
+	                "background-color"=>"#546e7a",
+	                "color"=>"white",
+				]
+	        ),
+	        summary_row_labels = ["Average"],
+	        summary_rows = [(data, i) -> i == 1 ? "" :
+	            round(mean(data[:, i]), digits=1)],
+	    )
+		
+		(pt=pt, risk=risk)
+	end
+
+		
+	function max_dry_spell(rainfall; threshold=0.0)
+	    current = 0
+	    maximum = 0
+	    for rain ∈ rainfall
+	        if rain <= threshold
+	            current += 1
+	            maximum = max(maximum, current)
+	        else
+	            current = 0
+	        end
+	    end
+	    maximum
+	end
+
+		
+	function max_heat_spell(temperature, threshold)
+	    current = 0
+	    maximum = 0
+	    for temp ∈ temperature
+	        if temp > threshold
+	            current += 1
+	            maximum = max(maximum, current)
+	        else
+	            current = 0
+	        end
+	    end
+	    maximum
+	end
 	
+
+	function accumulated_heat_stress(temperature, threshold)
+	    total = 0.0
+	    for temp ∈ temperature
+	        if temp > threshold
+	            total += (temp - threshold)
+	        end
+	    end
+	    total
+	end
+
+		
+	function eval_one_year(year_data, awc, cr_awc, t_base, t_cr)
+	    n = nrow(year_data)
+	    sw = zeros(n)
+	    sw[1] = awc / 2.0
+	    
+	    for i ∈ 2:n
+	        balance = year_data.rain[i] - year_data.etc[i]
+	        sw[i] = clamp(sw[i-1] + balance, 0.0, awc)
+	    end
+	    
+	    # Water stress metrics
+	    stress_level = cr_awc * awc
+	    rain = sum(year_data.rain)
+	    water_stress_days = count(sw .< stress_level)
+	    max_dry = max_dry_spell(year_data.rain)
+	    
+	    # Heat stress metrics
+	    heat_stress_days = count(year_data.tmax .> t_base)
+	    max_heat = max_heat_spell(year_data.tmax, t_base)
+	    accum_heat = accumulated_heat_stress(year_data.tmax, t_base)
+	    severe_heat_days = count(year_data.tmax .> t_cr)
+	    
+	    (rain = rain, 
+	     water_stress_days = water_stress_days, 
+	     max_dry = max_dry,
+	     heat_stress_days = heat_stress_days,
+	     max_heat = max_heat,
+	     accum_heat = accum_heat,
+	     severe_heat_days = severe_heat_days)
+	end
+
+		
+	function eval_period(df, start_day, duration, awc, cr_awc, t_base, t_cr)
+	    isempty(df) && return nothing
+	    
+	    df_sorted = sort(df, [:year, :doy])
+	    years = sort(unique(df_sorted.year))
+	    
+	    results = []
+	    
+	    for year ∈ years
+	        year_idx = findall(df_sorted.year .== year)
+	        isempty(year_idx) && continue
+	        
+	        start_idx = findfirst(i -> df_sorted.doy[i] >= start_day, year_idx)
+	        isnothing(start_idx) && continue
+	        
+	        start_row = year_idx[start_idx]
+	        
+	        # Collect consecutive days
+	        period_rows = Int[]
+	        current_row = start_row
+	        days_collected = 0
+	        
+	        while days_collected < duration && current_row <= nrow(df_sorted)
+	            push!(period_rows, current_row)
+	            days_collected += 1
+	            current_row += 1
+	        end
+	        
+	        (length(period_rows) < duration) && continue
+	        
+	        period_data = df_sorted[period_rows, :]
+	        
+	        # Check if period spans into next year
+	        years_in_period = unique(period_data.year)
+	        year_span = if length(years_in_period) > 1
+	            "$(minimum(years_in_period))-$(maximum(years_in_period))"
+	        else
+	            "$(year)"
+	        end
+	        
+	        result = eval_one_year(period_data, awc, cr_awc, t_base, t_cr)
+	        push!(results, (year_span=year_span, result...))
+	    end
+	    
+	    results
+	end
+		
+
 	Markdown.parse("🙈 _unhide core code_")
 end	
 
@@ -1292,167 +1038,54 @@ begin
 	end
 end
 
-# ╔═╡ add04be8-dce7-49f0-8390-3dea2076d2d7
-begin
-	function plot_distribution(df; par=:tmin, width=700)
-		if isempty(df)
-			return show_empty_chart("No results yet; no chart to plot.", width)
-		end
+# ╔═╡ 3dc912ad-cf32-42a2-a6b6-a4b21c122c7a
+let
+q = qno()
+	
+details(
+"Distribution notes",
+Markdown.parse("""
+	!!! info "Histogram"
+	Shows the spread of air temperature values. Values that occur more frequently will have increasingly tall bars, whereas rare values will have shorter bars.
+	
+	0. Shape of histogram: Is it normal (bell-shaped), skewed, or bimodal?
+	0. Mean (`μ`): The average minimum temperature
+	0. Standard deviation (`σ`): How much temperatures vary
+	0. 1st order autcorrelation (`r`) and skewness (`γ`): Statistical measures of the distribution shape. Note `r` here is not the same as the `r` used later in cross‑variable scatterplots.
 		
-		# Variable settings
-	    var_settings = Dict(
-	        :tmin => (label="Min. temp.", unit="°C", 
-					  column=:tmin, dist_type=:skewnorm),
-	        :tmax => (label="Max. temp.", unit="°C", 
-					  column=:tmax, dist_type=:skewnorm),
-	        :wind => (label="Wind speed", unit="m s⁻¹", 
-					  column=:wind, dist_type=:weibull)
-	    )
-	    
-	    # Get settings for chosen variable
-	    vset = var_settings[par]
-	    is_wind = (par == :wind)
-	    
-	    # Extract all samples
-	    all_samples = df[!, vset.column]
-	    
-	    # Get year information
-	    years = unique(df.year)
-	    nyears = length(years)
-	    firstyear = minimum(years)
-	    lastyear = maximum(years)
-	    
-	    # Fit appropriate distribution
-	    all_dist = is_wind ? fit_weibull(all_samples) : fit_skewnorm(all_samples)
-	    
-	    # Calculate statistics
-	    avg = round(mean(all_samples), digits=2)
-	    sd = round(std(all_samples), digits=2)
-	    rlag = round(first(autocor(all_samples, [1])), digits=2)
-	    
-	    # Year range text
-	    txt = nyears > 1 ? 
-	          "$nyears years: $firstyear-$lastyear" :
-	          "$nyears year: $firstyear"
-	    
-	    fig = Figure(size=(width, 1050))
-
-		# ========== Panel 1: Histogram with PDF ==========
-	    # Title includes skewness for temperature, not for wind
-	    title_str = if is_wind
-	        "$(vset.label) Distribution ($txt)\n(μ=$avg, σ=$sd, r=$rlag)"
-	    else
-	        sk = round(skewness(all_samples), digits=2)
-	        "$(vset.label) Distribution ($txt)\n(μ=$avg, σ=$sd, r=$rlag, γ=$sk)"
-	    end
-	    
-	    ax1 = Axis(fig[1, 1],
-	               xlabel="$(vset.label) ($(vset.unit))",
-	               ylabel="Density",
-	               title=title_str)
-	    
-	    hist!(ax1, all_samples, bins=30, normalization=:pdf,
-	          color=(:skyblue, 0.7), strokecolor=:black, strokewidth=1)
-	    
-	    x_min, x_max = extrema(all_samples)
-	    x_range_pdf = range(x_min, x_max, length=N_SAMPLES)
-	    
-	    # For wind (Weibull), always use broadcasting; for temp, check skewness
-	    if is_wind
-	        y_range_pdf = pdf.(all_dist, x_range_pdf)
-	    else
-	        sk = skewness(all_samples)
-	        bNormalSkew = (abs(sk) < SKEW_THRESHOLD)
-	        y_range_pdf = bNormalSkew ? pdf.(all_dist, x_range_pdf) : 
-	                                    pdf(all_dist, x_range_pdf)
-	    end
-	    
-	    lines!(ax1, x_range_pdf, y_range_pdf, color=:blue, linewidth=2)
-	    
-	    # ========== Panel 2: Time series with Fourier fit ==========
-	    total_days = length(all_samples)
-	    t = collect(0:(total_days-1))
-	    
-	    @. fourier_model(t, p) = p[1] + 
-	                             p[2]*cos(2π*t/365) + p[3]*sin(2π*t/365) +
-	                             p[4]*cos(4π*t/365) + p[5]*sin(4π*t/365)
-	    
-	    # Different initial guesses for wind vs temperature
-	    p0 = is_wind ? [mean(all_samples), 0.3, 0.3, 0.2, 0.2] :
-	                   [mean(all_samples), 5.0, 5.0, 1.0, 1.0]
-	    
-	    fit = curve_fit(fourier_model, t, all_samples, p0)
-	    full_trend_curve = fourier_model(t, fit.param)
-	    
-	    # Extract coefficients
-	    a0 = round(fit.param[1], digits=2)
-	    a1, b1, a2, b2 = fmt.(fit.param[2:end])
-	    
-	    # Create equation string
-	    eq_str = L"f(t)=%$(a0)%$(a1)\cos(\omega t)%$(b1)\sin(\omega t)%$(a2)\cos(2\omega t)%$(b2)\sin(2\omega t)"
-	    
-	    # Y-axis limits: wind starts at 0, temperature allows negative
-	    vmin, vmax = extrema(all_samples)
-	    ymin = is_wind ? 0 : vmin * 0.95
-	    ymax = vmax * 1.05
-	    
-	    # Create x-axis ticks: year numbers
-	    tick_positions = [1 + (i-1) * 365 for i in 1:(nyears+1)]
-	    tick_labels = string.(1:(nyears+1))
-	    
-	    ax2 = Axis(fig[2, 1],
-	               xlabel="Year",
-	               ylabel="$(vset.label) ($(vset.unit))",
-	               title=eq_str,
-	               limits=(0, length(all_samples) + 10, ymin, ymax),
-	               xticks=(tick_positions, tick_labels))
-	    
-	    # Scatter plot of all concatenated data
-	    x_range = 1:length(all_samples)
-	    scatter!(ax2, x_range, all_samples, 
-	             color=:red, markersize=3,
-	             strokecolor=:black, strokewidth=0.5)
-	    
-	    # Plot trend curve
-	    lines!(ax2, 1:length(full_trend_curve), full_trend_curve,
-	           color=:darkgreen, linewidth=3, linestyle=:solid)
+	!!! info "Time series (two‑harmonic Fourier model)"
+	General equation: `y = a₀ + a₁cos(ωt) + b₁sin(ωt) + a₂cos(2ωt) + b₂sin(2ωt)`, 	where
+	- `ω` = 2π/365, `t` = day of year, and constant a₀ is the annual mean
+	- `cos(ωt)` and `sin(ωt)` terms capture the **annual** cycle
+	- `cos(2ωt)` and `sin(2ωt)` terms capture the **semi-annual** variations
 	
-	    # ========== Panel 3: Monthly violins ==========
-	    ax3 = Axis(fig[3, 1],
-	               xlabel = "Month",
-	               ylabel = "$(vset.label) ($(vset.unit))",
-	               xticks = (1:12, mths()))
-	    
-	    violin!(ax3, df.month, all_samples,
-	            datalimits = extrema,
-	            color = (:skyblue, 0.7),
-	            show_median = true,
-	            strokecolor = :black,
-	            strokewidth = 1)
-	    
-	    refline = hlines!(ax3, [avg], color=:red, linestyle=:dash, linewidth=2)
-	    
-	    # Legend
-	    Legend(fig[4, 1], [refline], ["Overall mean"], 
-	           framevisible=false, tellwidth=false)
-	    rowsize!(fig.layout, 4, 0)
-	    
-	    fig
-	end
-
+	**Important:** The magnitude of the coefficients indicates the strength of each cycle:
 	
-	fig_dist_tmin = plot_distribution(df; par=:tmin, width=width)
-end |> WideCell(; max_width=width)
-
-# ╔═╡ 52768246-c7e3-4d64-a6f9-cc1e342d1950
-begin
-	fig_dist_tmax = plot_distribution(df; par=:tmax, width=width)
-end |> WideCell(; max_width=width)	
-
-# ╔═╡ 8393867f-17a8-4eaa-a122-3ef3dd2ddfc8
-begin
-	fig_dist_wind = plot_distribution(df; par=:wind, width=width)
-end |> WideCell(; max_width=width)	
+	- **For the annual cycle:** The amplitude is `√(a₁² + b₁²)` where `a₁` and `b₁` are the coefficients of `cos(ωt)` and `sin(ωt)`
+	- **For the semi-annual cycle:** The amplitude is `√(a₂² + b₂²)` where `a₂` and `b₂` are the coefficients of `cos(2ωt)` and `sin(2ωt)`
+	
+	**What this means:**
+	
+	- **Larger coefficients** (in absolute value) = stronger seasonal cycle at that frequency
+	- If annual coefficients are large and semi-annual coefficients are small, the location has one distinct warm/cool season per year
+	- If semi-annual coefficients are also large, there may be two warm/cool periods per year (*e.g.*, some tropical locations have bimodal temperature patterns)
+	
+	**💡 Tip:** Compare the relative magnitudes when looking at different sites. A site with weak seasonal variation will have smaller coefficients than a site with strong seasons.
+		
+	!!! info "Violin plots by month" 
+	Violin plots show the distribution shape for each month. Imagine looking at a histogram chart rotated 90 degrees.
+	
+	- Vertical axis = temperature. Vertical extent shows the range; internal markers typically indicate the median and quartiles.
+	- Width at any temperature value shows relative frequency (probability density): wider = more common; narrow “necks” = rarer values.
+	- Read violins for symmetry/skew, spread (how concentrated vs dispersed a month is), and the presence of outliers.
+	
+	!!! question "Question no. $(q())"
+	    Does this site show strong seasonal variation or relatively constant temperatures?
+	
+	!!! question "Question no. $(q())"
+	    Is the temperature distribution symmetric or skewed?
+	"""), open=show_notes)
+end
 
 # ╔═╡ 51f6d474-2641-4dbb-93dc-c54ab46dff42
 begin
@@ -1545,126 +1178,322 @@ begin
 	fig_acf_wind = plot_acf(df; par=:wind, width=width)
 end  |> WideCell(; max_width=width)	
 
-# ╔═╡ 8000997f-84da-4420-b26e-fac3e7497a38
-begin
-	function plot_hovmoller(df; par=:tmin, window=7, width=700)
-	    if isempty(df)
-			return show_empty_chart("No results yet; no chart to plot.", width)
-		end
-	    
-	    # Variable settings
-	    var_settings = Dict(
-	        :tmin => (label="Min. temp.", unit="°C", column=:tmin, n_colors=10),
-	        :tmax => (label="Max. temp.", unit="°C", column=:tmax, n_colors=10),
-	        :wind => (label="Wind speed", unit="m s⁻¹", column=:wind, n_colors=15)
-	    )
-	    
-	    # Get settings for chosen variable
-	    vset = var_settings[par]
-	    
-	    # Get year information
-	    years = sort(unique(df.year))
-	    nyears = length(years)
-	    firstyear = minimum(years)
-	    lastyear = maximum(years)
-	    
-	    if nyears < 2
-			return show_empty_chart("Need ≥2 years of data to plot.", width)
-		end
-	    
-	    # === Prepare DOY data with running mean ===
-	    max_days = 365
-	    hovmoller_doy = fill(NaN, nyears, max_days)
-	    
-	    # Running mean window size
-	    half_window = window ÷ 2
-	    
-	    for (yn_idx, year) in enumerate(years)
-	        # Get data for this year
-	        year_data = filter(row -> row.year == year, df)
-	        year_values = year_data[!, vset.column]
-	        
-	        # Only process first 365 days (skip leap day if present)
-	        n_days = min(length(year_values), 365)
-	        
-	        for doy in 1:n_days
-	            # Calculate running mean centered on this day
-	            start_idx = max(1, doy - half_window)
-	            end_idx = min(n_days, doy + half_window)
-	            hovmoller_doy[yn_idx, doy] = mean(year_values[start_idx:end_idx])
-	        end
-	    end
-	    
-	    # === Calculate color range ===
-	    all_values = df[!, vset.column]
-	    data_min = minimum(all_values)
-	    data_max = maximum(all_values)
-	    
-	    # === Create figure ===
-	    year_range = firstyear:lastyear
-	    panel_height = max(250, nyears * 80)
-	    fig_height = panel_height + 50
-	    fig = Figure(size=(width, fig_height))
-	    
-	    # X-axis labels: first day of each month + end of year
-	    month_starts = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 365]
-	    month_labels = [string(v) for v in month_starts]
-	    
-	    # === Running Mean ===
-	    ax_doy = Axis(
-	        fig[1, 1],
-	        xlabel="Day of Year",
-	        ylabel="Year",
-	        title="$(vset.label) - $window-Day Running Mean ($nyears years: " *
-	              "$(first(year_range))-$(last(year_range)))",
-	        xticks=(month_starts, month_labels),
-	        yticks=(1:nyears, string.(year_range))
-	    )
-	    
-	    n_colors = vset.n_colors
-	    cmap = cgrad(:coolwarm, n_colors, categorical=true)
-	    hm_doy = heatmap!(ax_doy, 1:max_days, 1:nyears, hovmoller_doy',
-	                      colormap=cmap, colorrange=(data_min, data_max),
-	                      interpolate=false)
-	    
-	    # Add gridlines
-	    for i in 0:nyears
-	        hlines!(ax_doy, [i + 0.5], color=:black, linewidth=0.5, alpha=0.3)
-	    end
-	    
-	    for day in month_starts
-	        vlines!(ax_doy, [day + 0.5], color=:black, linewidth=0.5, alpha=0.2)
-	    end
-	    
-	    # Calculate colorbar ticks
-	    bin_width = (data_max - data_min) / n_colors
-	    tick_positions = [data_min + bin_width * i for i in 0:n_colors]
-	    tick_labels = [string(round(pos, digits=1)) for pos in tick_positions]
-	    
-	    Colorbar(fig[2, 1], hm_doy, 
-	             label="$window-day average $(vset.label) ($(vset.unit))", 
-	             vertical=false, flipaxis=false,
-	             ticks=(tick_positions, tick_labels))
-	    
-	    fig
-	end
+# ╔═╡ 245ca246-0aea-4b0a-a4bf-4c45e9ebfc4f
+let
+	q = qno()
 	
+	details(
+"Autocorrelation notes",
+	Markdown.parse("""
+	!!! info "Autocorrelation plot"			   
+	Shows how today's temperature relates to future temperatures.
 	
-	fig_hov_tmin = plot_hovmoller(df; par=:tmin, 
-			  					  window=window_tmin, width=width)
-end |> WideCell(; max_width=width)
+	- Short lags (0-60 days): Strong correlation means temperature persists day-to-day
+	- ~183 days: A spike here indicates semi-annual seasonality
+	- ~365 days: A spike here indicates annual seasonality
+	- 95% confidence interval (pink band): Values outside are statistically significant (p<0.05)
+	
+	**How to interpret the decay pattern:**
+	
+	0. **Temperature typically shows strong persistence:** Autocorrelation often remains significant for 30-90+ days because atmospheric conditions change gradually
+	
+	0. **Rate of decay matters:**
+	   - **Slow decay** (stays high for 60+ days) → very stable, slowly changing conditions
+	   - **Fast decay** (drops to confidence band in <30 days) → more variable, rapidly changing conditions
+	
+	0. **Look at the shape:**
+	   - Smooth, gradual decline → persistent weather patterns
+	   - Rapid drop then leveling → initial persistence followed by randomness
+	
+	**Important distinction:**
+	
+	- Statistical significance (outside pink band) ≠ practical predictability.
+	- Meaningful persistence for daily temperature in Malaysia’s humid tropics is usually concentrated at short lags (order of days to a couple of weeks). Look at the `r` value. Should be `r` >0.5.
+	- Long persistence (60+ days significance) indicates the climate has strong "memory" and stable patterns
+	
+	!!! info "Why memory matters"
+	
+	- Strong "memory" is high correlation at long lags
+	- Longer persistence → fewer extreme day-to-day changes
+	- Shows whether air temperature is stable and predictable
+	- Shows whether any seasonal transitions are more gradual
+	- Allows better planning for short-term activities
+	- Indicate whether any extreme day-to-day fluctuations
+	- Indicate how strongly current conditions influence weather weeks into the future
+	
+	!!! question "Question no. $(q())"
+	    How many days ahead can you predict temperature with reasonable confidence? *Hint:* At what lag does the autocorrelation become insignificant for this site?
+	
+	!!! question "Question no. $(q())"
+	    Is there a clear semi-annual and annual cycles (spike at ~183 and ~365 days, respectively)?
+					   
+	!!! question "Question no. $(q())"
+	    Explain why there could a year could have a semi-annual and an annual cycle.
+	"""), open=show_notes)
+end
 
-# ╔═╡ 1f1d5a9e-53b4-42ef-9801-78254dbe45c5
-begin
-	fig_hov_tmax = plot_hovmoller(df; par=:tmax, 
-			 					  window=window_tmax, width=width)
-end |> WideCell(; max_width=width)	
+# ╔═╡ e675760c-c2c7-4743-a96a-18b72a455435
+let
+	q = qno()
+	
+details(
+"Seasonal pattern notes",
+	Markdown.parse("""
+	!!! info "Running mean"
+	**What is a running mean?**: A running mean (or moving average) calculates the average of the current day plus the previous days in the window. For example, a 7-day running mean averages today's value with the previous 6 days (7 days total). This smooths out day-to-day fluctuations to reveal broader patterns.
+	
+	**What to look for**:
+	- **Color patterns**: Cooler (blue) versus warmer (red) periods
+	- **Consistency across years**: Do the same calendar days show similar patterns year after year?
+	- **Anomalies**: Unusual hot or cold spells that stand out from the typical pattern
+	- **Timing of transitions**: When do seasons shift from cool to warm and vice versa?
+	
+	**What the Window Size Slider does**:
+	1. **Smaller window (*e.g.*, 1-3 days)**:
+	   - Less smoothing, closer to actual daily values
+	   - Shows more day-to-day variation and short-term weather events
+	   - Heatmap appears more "noisy" with rapid color changes
+	   - Useful for identifying brief extreme events (cold snaps, heat waves)
+	
+	2. **Larger window (*e.g.*, 15-30 days)**:
+	   - More smoothing across time
+	   - Emphasizes longer-term patterns and seasonal trends
+	   - Heatmap appears more uniform with gradual color transitions
+	   - Better for seeing the "big picture" seasonal cycle
+	   - Individual weather events get averaged out
+	
+	**💡 Tip**: 
+	- Larger windows = more smoothing = clearer seasonal patterns but less detail
+	- Smaller windows = less smoothing = more detail but harder to see overall trends
+	- **Caution**: this notebook uses trailing *n*-day running mean. Because of this, apparent peaks are delayed by approximately `(n–1)/2` days. Larger `n` ⇒ larger apparent delay. Example: `n`=28 → ~14‑day delay.
+	
+	**Why it matters**: 
+	- Reveals seasonal timing and year-to-year consistency
+	- Helps identify optimal planting/harvesting windows
+	- Shows if seasons are shifting earlier or later across years
+	
+	!!! question "Question no. $(q())"				   
+	    Adjust the window size. How does the pattern change?
+	!!! question "Question no. $(q())"				   
+	    Are there specific weeks that are consistently cooler or warmer across all years?
+					   
+	!!! question "Question no. $(q())"				   
+	    Do you see any years with unusual patterns (anomalous seasons)?
+	"""), open=show_notes)
+end
 
-# ╔═╡ 4bcdc54a-5591-46c0-a1fd-e2bfa8e20553
-begin
-	fig_hov_wind = plot_hovmoller(df; par=:wind, 
-								  window=window_wind, width=width)
-end |> WideCell(; max_width=width)	
+# ╔═╡ a9987d0b-ca5e-4063-8ba7-128021588710
+let
+	q = qno()
+	
+details(
+"Distribution notes",
+	Markdown.parse("""
+	!!! info "Max. air temperature"
+	In Malaysia's humid tropics, cloud cover and surface wetness strongly moderate maximum air temperatures through shading and evaporative cooling. For oil palm, maximum temperature influences growth more than minimum temperature.
+	
+	**Compare with minimum temperature**:
+	- Is the standard deviation larger? (Maximum temps usually vary more)
+	- Is the distribution shape different?
+	- What's the typical diurnal range (difference between max and min)?
+	
+	!!! question "Question no. $(q())"				   
+	    Do maximum temperatures show more variability than minimum temperatures? Why?
+				   
+	!!! question "Question no. $(q())"				   
+	    In the above notes: max. air temperature has a larger impact or influence on oil palm growth than min. air temperature. Why is that?
+	"""), open=show_notes)
+end
+
+# ╔═╡ c87244ea-48b5-4766-ab5c-52b637ed13a9
+let
+	q = qno()
+	
+details(
+"Autocorrelation notes",
+	Markdown.parse("""
+	!!! info "What to look for"
+	- Similar patterns to minimum temperature, but possibly weaker correlation
+	- Does maximum temperature have more or less "memory" than minimum temperature?
+	
+	!!! question "Question no. $(q())"				   
+	    Based on the autocorrelation plots for both minimum (Section 3.2) and maximum temperature (Section 4.2), which variable has stronger "memory"
+				   				   
+	!!! question "Question no. $(q())"				   
+	    How does temperature "memory" relate to physical drivers, such as nighttime cooling vs. daytime solar heating?
+	"""), open=show_notes)
+end
+
+# ╔═╡ 7672cf1c-0219-45ea-ac50-8d724cb25483
+let
+	q = qno()
+	
+details(
+"Seasonal pattern notes",
+	Markdown.parse("""
+	!!! info "Min. vs. max. air temperature"
+	**Compare with Section 3.3**:
+	- Are the hottest times of year the same as when minimum temperatures peak?
+	- Is there a lag between maximum and minimum temperature seasons?
+	
+	**💭 Remember**: 
+	- Larger windows = more smoothing = clearer seasonal patterns but less detail
+	- Smaller windows = less smoothing = more detail but harder to see overall trends
+	- **Caution**: this notebook uses trailing *n*-day running mean. Because of this, apparent peaks are delayed by approximately `(n–1)/2` days. Larger `n` ⇒ larger apparent delay. Example: `n`=28 → ~14‑day delay.
+	
+	!!! question "Question no. $(q())"		
+	    Compare the heatmaps in Sections 3.3 and 4.3.
+		0. Do the hottest times of the year (red periods in 4.3) coincide with the warmest nights (red periods in 3.3), or is there a noticeable shift in timing?
+		0. Are there more variability in daily maximum temperatures than minmum temperatures?
+	"""), open=show_notes)
+end
+
+# ╔═╡ a110527e-7fdf-4167-84e4-3c440a91f016
+let
+	q = qno()
+	
+details(
+"Distribution notes",
+	Markdown.parse("""
+	!!! info "Wind speed and its impact"
+	Daily mean wind speeds are typically right‑skewed and are often better described by a Weibull distribution rather than a normal curve.
+	
+	**What to look for**:
+	- **Mean wind speed**: Is this a calm or windy location?
+	- **Distribution shape**: Wind speed is often right-skewed (occasional high winds)
+	- **Seasonal pattern**: Look at the monthly violin plots
+	
+	!!! info "Why wind speed matters"
+	1. **Disease Management**:
+	   - Tropics have high humidity and warm temperatures year-round
+	   - **Low wind + high humidity = ideal conditions for fungal diseases**
+	   - Stagnant air allows fungal spores to settle and infect plants
+	   - Higher wind speeds improve air circulation, reducing leaf wetness duration
+	
+	2. **Evapotranspiration and Water Use**:
+	   - Wind increases evapotranspiration rates
+	   - Low wind = lower water demand (less irrigation needed)
+	   - High wind = higher water stress (more irrigation required)
+	   - Important for water management in plantations
+	
+	3. **Pollination**:
+	   - For wind-pollinated crops, low wind periods can reduce pollination efficiency and fruit set
+	   - Timing of low wind periods affects yield
+	
+	4. **Microclimate Control**:
+	   - Wind affects temperature and humidity around crops
+	   - In dense plantations (oil palm, rubber), low wind creates hot, humid microclimates
+	   - Can stress plants or promote disease
+	
+	5. **Drying and Post-Harvest**:
+	   - Paddy (rice) and other crops need drying after harvest
+	   - Wind speeds affect drying rates
+	   - Low wind = slower drying = higher risk of spoilage
+	
+	6. **Pest Dispersal**:
+	   - Wind can spread pests (*e.g.*, bagworms in oil palm)
+	   - Understanding wind patterns helps predict pest outbreaks
+	
+	!!! question "Question no. $(q())"	
+	    Based on the violin plot (bottom panel), which months show the lowest mean wind speeds, and what agricultural risks might this present (refer to Why wind speed matters)?
+				   
+	!!! question "Question no. $(q())"		
+	    Are there recurring breezy periods, where wind speeds are above 3 to 4 m s⁻¹?
+				   
+	!!! question "Question no. $(q())"		
+	    Plot several sites to determine how does the location of a site affect the typical daily wind speeds. *Hint*: compare coastal vs inland sites, Peninsular vs East Malaysia sites.
+	"""), open=show_notes)
+end
+
+# ╔═╡ 269c9adf-2597-46cd-a7c7-297bc9c44681
+let
+	q = qno()
+	
+details(
+"Autocorelation notes",
+	Markdown.parse("""
+	!!! info "Wind speed "memory""
+	Wind speed shows **much weaker autocorrelation (ACF)** than temperature, often dropping into the confidence band within just a few days.
+	
+	**Why wind has less "memory"**:
+	- Wind is driven by **pressure differences** that change rapidly (weather systems, local heating/cooling)
+	- Temperature changes gradually due to thermal inertia (land/ocean heat up and cool down slowly)
+	- Daily wind speeds can vary dramatically from one day to the next
+	
+	**What to look for**:
+	
+	0. **Short-lag behavior (0-10 days)**:
+	   - Does autocorrelation drop to near zero quickly (within 5-10 days)?
+	   - This is normal for wind. It means yesterday's wind does not tell you much about next week's wind
+	   - Compare this to your temperature autocorrelation: wind should be much weaker
+	
+	0. **Seasonal signals**:
+	   - **Spike near 365 days**: Indicates **annual wind cycle** (one distinct pattern per year)
+	   - **Spike near 183 days (~6 months)**: Indicates **semi-annual wind cycle** (two distinct patterns per year)
+	   - **Both spikes present**: Your site has **bimodal wind patterns**, which is common in monsoon regions!
+	   
+	   **What bimodal patterns mean**:
+	   - Two wind seasons per year (*e.g.*, Northeast and Southwest monsoons)
+	   - Wind reverses direction or changes intensity twice annually
+	   - Example: Malaysia has NE monsoon (~Nov-Mar, windier) and SW monsoon (~May-Sep, calmer)
+	   - Important for planning: you have two predictable seasonal transitions
+	
+	0. **Overall pattern**:
+	   - **Rapid decay then flat**: Typical pattern, starting with an initial weak persistence, then essentially random
+	   - **Consistently low**: Wind is highly variable with little predictability
+	 - **Small spikes at 183/365**: Weak but predictable seasonal patterns overlaid on daily variability
+	
+	!!! info "Why this matters for agriculture"
+	
+	- **Low persistence = high uncertainty**: Cannot reliably predict wind conditions more than a few days ahead
+	- **Plan for variability**: 
+	  - Irrigation scheduling should account for unpredictable evapotranspiration rates
+	  - Spraying operations need flexible timing (wait for calm conditions)
+	  - Wind-sensitive crops (*e.g.*, banana, papaya) face unpredictable stress
+	
+	- **If you see seasonal patterns** (365-day spike):
+	  - Your region has predictable seasonal wind shifts (good for planning)
+	  - Example: Monsoon regions can anticipate windier/calmer seasons
+	  - Useful for wind-pollination or field operations like drying (paddy)
+	
+	!!! question "Question no. $(q())"		
+	    How does wind autocorrelation at this current site compare to temperature autocorrelation?
+
+	!!! question "Question no. $(q())"		
+	    Do you see one spike (~365 days) or two spikes (~183 and ~365 days)? Why might wind speeds have only one spike or two spikes in a year?
+				   
+	!!! question "Question no. $(q())"		
+	    If wind is highly unpredictable (*i.e.*, very low ACF everywhere), what management strategies would you recommend for wind-sensitive operations?
+				   
+	!!! question "Question no. $(q())"		
+	    The wind-rainfall relationship description mentions coastal versus inland sites. What key wind-related mechanism might be unique to a coastal site?
+	"""), open=show_notes)
+end
+
+# ╔═╡ 5630d61f-d01a-4cf4-b569-0cc0bc00e66f
+let
+	q = qno()
+	
+details(
+"Seasonal pattern notes",
+	Markdown.parse("""
+	!!! info "Wind speed patterns"
+	**What to look for**:
+	- **Monsoon patterns**: Seasonal wind shifts
+	- **Land-sea breeze patterns**: In coastal vs inland areas
+	
+	**💭 Remember**: 
+	- Larger windows = more smoothing = clearer seasonal patterns but less detail
+	- Smaller windows = less smoothing = more detail but harder to see overall trends
+	- **Caution**: this notebook uses trailing *n*-day running mean. Because of this, apparent peaks are delayed by approximately `(n–1)/2` days. Larger `n` ⇒ larger apparent delay. Example: `n`=28 → ~14‑day delay.
+	
+	!!! question "Question no. $(q())"		
+	    When do wind speeds tend to be high and low at this site?
+				   
+	!!! question "Question no. $(q())"		
+	    Even when wind speeds are at their highest at this site, are they beneficial, or even harmful, for agriculture. Explain your answer.
+	"""), open=show_notes)
+end
 
 # ╔═╡ 5541a862-4ba6-4c05-b9c0-eaff4227e649
 begin
@@ -1810,6 +1639,35 @@ begin
 	fig_dist_rain = plot_rain_distribution(df; width=width)
 end  |> WideCell(; max_width=width)	
 
+# ╔═╡ 0999ebf3-6b38-4214-be53-f118c67b7c95
+let
+	q = qno()
+	
+details(
+"Distribution notes",
+	Markdown.parse("""
+	!!! info "Key statistics"
+	- **Total annual rainfall**: Indicates how much rainfall in a year. Note: 1 mm rain means 1 L (or 1 kg) of water over 1 m² ground area. So, 2000 mm annual rainfall means 2000 L of water has fallen over 1 m² ground area in a year. 
+	- **Wet days**: Indicates how many days per year have measurable rain
+	- **PWW** (Probability Wet-Wet): If today is wet, what is the probability tomorrow will also be wet (*i.e.*, probability of two consecutive wet days)
+	- **PWD** (Probability Wet-Dry): If today is dry, what is the probability tomorrow will be wet
+	- **Mean daily rainfall**: Average amount on rainy/wet days
+	
+	**Histogram interpretation**:
+	- **Typically, first few bars (left of chart)** are tall: They represent dry days and days with light rains; they are typically 50-80% of days
+	- **Long right tail**: Bars on the increasing right side are increasingly shorter; they represent occasional/rare heavy rainfall events
+	
+	!!! question "Question no. $(q())"		
+	    What percentage of annual rainfall comes from extreme events versus light rain?
+				   
+	!!! question "Question no. $(q())"		
+	    Why is it important in agriculture to know the distribution of wet and dry spell lengths?
+				   
+	!!! question "Question no. $(q())"		
+	    Extreme heavy rain events occur rarely. So, if they are relatively rare, are they important in agriculture, compared to light rain events? Explain.
+	"""), open=show_notes)
+end
+
 # ╔═╡ f3aa9f71-4929-436b-938e-9d6817c23487
 begin
 	function plot_rain_persistence(df; width=700)
@@ -1870,6 +1728,47 @@ begin
 	fig_persist_rain = plot_rain_persistence(df; width=width)
 end	|> WideCell(; max_width=width)	
 
+# ╔═╡ 1ed28912-0a8c-4642-96e2-40a32a83c28c
+let
+	q = qno()
+	
+details(
+"Persistence notes",
+	Markdown.parse("""
+	!!! info "Spell distributions"
+	Wet spell distribution shows the frequency of consecutive rainy days of different lengths (*e.g.*, how often do 3-day, 7-day, or 14-day wet periods occur?). Dry spell distribution shows the same for consecutive dry days.
+	
+	**Why it matters**:
+	* Long dry spells → drought risk, crop water stress
+	* Long wet spells → flooding, delayed field operations, increased disease pressure
+	
+	**Transition probability matrix (Markov chain)**: Shows probability of tomorrow's state given today's state.
+	* **Read as**: "If today is [row state], tomorrow will be [column state] with probability [value]"
+	* **Diagonal values** (*e.g.*, Dry→Dry, Light→Light): Persistence probability—how likely a state continues
+	* **Off-diagonal values**: Transition probability—how likely states change
+	
+	High Dry→Dry persistence means dry spells last longer, which can become critical for irrigation scheduling and planting windows.
+	
+	**Key probabilities**:
+	* **PWW** (Wet→Wet): Probability wet day follows wet day
+	* **PWD** (Dry→Dry): Probability dry day follows dry day
+	
+	Higher PWD lengthens dry spells; higher PWW lengthens wet spells.
+	
+	!!! question "Question no. $(q())"		
+	    Why is knowing rainfall persistence important in agriculture?
+				   
+	!!! question "Question no. $(q())"		
+	    Examine "Dry→[rain intensity]" transitions: When rain breaks a dry spell, is it typically light or can it be heavy? What are the implications for runoff and soil erosion?
+				   
+	!!! question "Question no. $(q())"		
+	    Using the transition matrix, what is the total probability that a "Light rain" day (Today's State) will be followed by any type of wet day (Light, Moderate, Heavy, or Very Heavy)?
+				   
+	!!! question "Question no. $(q())"		
+	    Suppose PWW increases from 0.55 to 0.75, while PWD decreases from 0.20 to 0.10. Explain how this specific shift in transition probabilities alters the agricultural risk profile for the area, focusing on water storage management and the potential for alternating flood and drought stress within the same season.
+	"""), open=show_notes)
+end
+
 # ╔═╡ 780eb61b-8d27-46a8-ac0a-11565c408474
 begin
 	function plot_seasonal_concentration(df; width=700)
@@ -1906,6 +1805,36 @@ begin
 
 	fig_seasonal_rain = plot_seasonal_concentration(df; width=width)
 end |> WideCell(; max_width=width)
+
+# ╔═╡ 78c3cc81-0828-46d6-a9e6-88f25982a65f
+let
+	q = qno()
+	
+details(
+"Monthly contribution notes",
+	Markdown.parse("""
+	!!! info "Average monthly rainfall"
+	Peninsular and East Malaysia sites often show monsoon‑related unimodal or bimodal rainfall contributions, with timing that differs between coasts because of the Northeast and Southwest Monsoons.
+	
+	**What to look for**:
+	- **Uniform line**: 8.33% per month (even distribution)
+	- **Bars above this line**: Wetter months
+	- **Bars below this line**: Drier months
+	
+	**Common patterns**:
+	- **Unimodal**: One rainy season
+	- **Bimodal**: Two rainy seasons (common in tropics near equator)
+	
+	!!! question "Question no. $(q())"		
+	    Does this site have distinct wet and dry seasons? Refer also to Section 6.6.
+				   
+	!!! question "Question no. $(q())"		
+	    When does this site tend to experience distint periods of high and low rainfalls? Again, refer also to Section 6.6.
+				   
+	!!! question "Question no. $(q())"		
+	    Explain the impact of seasonal rainfall distribution on agriculture.
+	"""), open=show_notes)
+end
 
 # ╔═╡ 7b3d5e74-0289-4285-92ce-2d422589b0d2
 begin
@@ -2073,13 +2002,49 @@ begin
 	fig_regularity_rain = plot_rainfall_regularity(df; width=width)
 end  |> WideCell(; max_width=width)
 
+# ╔═╡ 27df242c-4752-4898-91cc-24832865827b
+let
+	q = qno()
+	
+details(
+"Monthly variability notes",
+	Markdown.parse("""
+	!!! info "IQR/Median Ratio) - What it measures"
+	The ratio of interquartile range (IQR) to median quantifies rainfall predictability on a relative scale:
+	* **Low IQR/Median** (<0.5): Consistent rainfall year-to-year → more predictable
+	* **High IQR/Median** (>1.0): High year-to-year variability → unpredictable
+	
+	**Why IQR/Median instead of coefficient of variation (CV)?**
+	- Rainfall data are highly skewed (many low values, few extreme highs).
+	- CV assumes normally distributed data and is sensitive to outliers.
+	- IQR/Median is non-parametric and robust to skewness, making it more appropriate for rainfall.
+	
+	**Color scale**: Green (predictable) → yellow → red (highly variable)
+	
+	**Why it matters**:
+	- High variability means farmers face greater uncertainty.
+	- A month with median rainfall of 200 mm but high IQR could deliver 50 mm (crop failure) or 400 mm (flooding) in different years.
+	- Management strategies must account for this range, not just the average.
+	
+	!!! question "Question no. $(q())"		
+	    How does unpredictable rainfall harm agriculture? *Hint*: Consider: (a) planting timing decisions, (b) crop selection, (c) investment in irrigation/drainage infrastructure.
+				   
+	!!! question "Question no. $(q())"		
+	    Compare variability during wet versus dry season months. Which season is more predictable, and why might this matter for cropping calendars?
+				   
+	!!! question "Question no. $(q())"		
+	    If rainfall is highly unpredictable (high IQR/Median), what risk management strategies would you recommend? *Hint*: Consider: crop diversification, insurance, water storage, drought-tolerant varieties.
+	"""), open=show_notes)
+end
+
 # ╔═╡ 0a606de0-f28d-4136-90e8-89168b62a561
 begin
 	function plot_dry_spell(df; width=700)
 	    if isempty(df)
 			return show_empty_chart("No results yet; no chart to plot.", width)
 	    end
-	    
+
+		stress_lmt = 14
 		years = unique(df.year)
 	    nyears = length(years)
 	    max_dry_spells = Int[]
@@ -2122,14 +2087,14 @@ begin
 	             color=(:coral, 0.35), strokecolor=:black, strokewidth=1)
 	    
 	    # Critical threshold (e.g., 14 days)
-	    hl = hlines!(ax1, 14, color=:red, linestyle=:dash, linewidth=2)
-	    
-	    Legend(fig[2,1], [hl], ["14-day critical threshold"],
-			   orientation=:horizontal,
-			   framevisible=false, tellwidth=false, halign=:right)
-	    
+	    hl = hlines!(ax1, stress_lmt, color=:red, linestyle=:dash, linewidth=3)
+		msg = "$(stress_lmt)-day critical threshold"
+		textlabel!(ax1, nyears+0.5, stress_lmt,  text=msg, 
+				   text_align=(:right, :top), fontsize=11, padding=1,
+				   offset=(0, -5), background_color=(:white, 0.5))
+		
 	    # Bottom: When do dry spells occur?
-	    ax2 = Axis(fig[3, 1],
+	    ax2 = Axis(fig[2, 1],
 	               xlabel = "Year",
 	               ylabel = "Day of year / Month",
 	               title = "When Does Maximum Dry Spell Occur?",
@@ -2145,119 +2110,68 @@ begin
 		ax2.yticks = (month_days, lbls)
 		ylims!(ax2, 1, 365)
 
-		rowsize!(fig.layout, 2, 0)
-	    
 	    fig
 	end
 	
 	fig_dryspells = plot_dry_spell(df; width=width)
 end |> WideCell(; max_width=width)
 
-# ╔═╡ b5091909-f90e-46bf-ba43-ac9d3bbd8ea0
-begin
-	function plot_rain_hovmoller(df; window=30, width=700)
-	    if isempty(df)
-			return show_empty_chart("No results yet; no chart to plot.", width)
-	    end
-	    
-		# Extract year information
-	    years = sort(unique(df.year))
-	    nyears = length(years)
-	    firstyear = minimum(years)
-	    lastyear = maximum(years)
-	    
-	    # === Prepare DOY data with running sum ===
-	    max_days = maximum([nrow(df[df.year .== yr, :]) for yr ∈ years])
-	    hovmoller_doy = fill(NaN, nyears, max_days)
-	    
-	    # Running sum window size (total accumulation over window)
-	    half_window = window ÷ 2
-	    
-	    for (yn, year) ∈ enumerate(years)
-	        year_rain = df[df.year .== year, :rain]
-	        n_days = length(year_rain)
-	        
-	        for doy ∈ 1:n_days
-	            # Calculate running sum centered on this day
-	            start_idx = max(1, doy - half_window)
-	            end_idx = min(n_days, doy + half_window)
-	            hovmoller_doy[yn, doy] = sum(year_rain[start_idx:end_idx])
-	        end
-	    end
-	    
-	    # === Prepare Monthly data (monthly totals) ===
-	    hovmoller_monthly = fill(NaN, nyears, 12)
-	    
-	    for (yn, year) ∈ enumerate(years)
-	        for month ∈ 1:12
-	            month_rain = df[(df.year .== year) .& (df.month .== month), :rain]
-	            if !isempty(month_rain)
-	                hovmoller_monthly[yn, month] = sum(month_rain)
-	            end
-	        end
-	    end
-	    
-	    # === Calculate color ranges ===
-	    # For running sum
-	    doy_min = minimum(filter(!isnan, hovmoller_doy))
-	    doy_max = maximum(filter(!isnan, hovmoller_doy))
-	    
-	    # For monthly totals
-	    monthly_min = minimum(filter(!isnan, hovmoller_monthly))
-	    monthly_max = maximum(filter(!isnan, hovmoller_monthly))
-	    
-	    # === Create figure ===
-	    year_range = firstyear:lastyear
-	    panel_height = max(250, nyears * 80)
-	    fig_height = panel_height + 50
-	    fig = Figure(size=(width, fig_height))
-	    
-	    # X-axis labels: first day of each month + end of year
-	    month_starts = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 365]
-	    month_labels = [string(v) for v in month_starts]
-	    
-	    # === Running Sum Panel ===
-	    ax_doy = Axis(
-	        fig[1, 1],
-	        xlabel="Day of Year",
-	        ylabel="Year",
-	        title="$(window)-Day Running Sum ($nyears years: " *
-	              "$(first(year_range))-$(last(year_range)))",
-	        xticks=(month_starts, month_labels),
-	        yticks=(1:nyears, string.(year_range))
-	    )
-	    
-	    n_colors = 10
-	    colors = [get(ColorSchemes.YlGnBu, x) 
-	              for x ∈ range(0, 0.8, length=n_colors)]
-	    cmap = cgrad(colors, n_colors, categorical=true)
-	    
-	    hm_doy = heatmap!(ax_doy, 1:max_days, 1:nyears, hovmoller_doy',
-	                      colormap=cmap, colorrange=(doy_min, doy_max),
-	                      interpolate=false)
-	    
-	    # Grid lines
-	    for i ∈ 0:nyears
-	        hlines!(ax_doy, [i + 0.5], color=:black, linewidth=0.5, alpha=0.3)
-	    end
-	    
-	    for day ∈ month_starts
-	        vlines!(ax_doy, [day + 0.5], color=:black, linewidth=0.5, alpha=0.2)
-	    end
-	    
-	    bin_width = (doy_max - doy_min) / n_colors
-	    tick_positions = [doy_min + bin_width * i for i in 0:n_colors]
-	    tick_labels = [string(round(pos, digits=1)) for pos in tick_positions]
-	    
-	    Colorbar(fig[2, 1], hm_doy, label="$(window)-day accumulated rainfall (mm)", 
-	             vertical=false, flipaxis=false,
-	             ticks=(tick_positions, tick_labels), width=Relative(0.95))
-	    
-	    fig
-	end
+# ╔═╡ 893df8c0-d71f-4b45-9de0-674975974403
+let
+	q = qno()
 	
-	fig_hov_rain = plot_rain_hovmoller(df; window=window_rain, width=width)
-end |> WideCell(; max_width=width)
+details(
+"Max. dry spell length notes",
+	Markdown.parse("""
+	!!! info "Longest dry spell"
+	**What to look for**:
+	* **Top panel**: Maximum dry spell length each year vs. critical threshold (red dashed line, set by default at 14 days, represents the number of  consecutive dry days before crop stress becomes detrimental to plant growth, even survival)
+	* **Bottom panel**: Timing of when maximum dry spells occur each year
+	
+	Compare with Sections 6.3 (seasonal rainfall patterns) and 6.4 (spell distributions) to see if long dry spells consistently occur during specific months or are randomly distributed.
+	
+	**Application**: 
+	
+	Critical for irrigation scheduling, drought preparedness, and assessing planting window risk. If maximum dry spells frequently exceed the threshold during the growing season, supplemental irrigation or drought-tolerant varieties become necessary.
+	
+	!!! question "Question no. $(q())"		
+	    If the maximum dry spell shown in the Top Panel occurred during a critical crop growth stage, would deficit irrigation (light, strategic watering) or full irrigation be more appropriate? Consider the Mean spell length from the Dry Spell Distribution chart (6.2).
+	
+	!!! question "Question no. $(q())"		
+	    How would you determine the actual critical stress threshold for a specific crop? *Hint*: consider rooting depth, growth stage sensitivity, soil water holding capacity.
+	
+	!!! question "Question no. $(q())"		
+	    Irrigation clearly benefits crops, so why isn't it widely practiced? Discuss reasons based on: (a) economic constraints (capital, energy, labor costs), (b) water availability and rights, (c) trade-offs between irrigation methods (flood, sprinkler, drip), and (d) risk of over-irrigation (waterlogging, salinization).
+	"""), open=show_notes)
+end
+
+# ╔═╡ 8b0504e1-f480-4191-a4f4-cfe236bee4ef
+let
+	q = qno()
+	
+details(
+"Seasonal patterns notes",
+	Markdown.parse("""
+	!!! info "Running sum"
+	**_n_-day running sum heatmap**:
+	Shows accumulated rainfall over rolling *n*-day windows. Blue/dark indicates heavy rainfall periods; yellow/light indicates dry periods.
+	
+	**What to look for**:
+	- Consistency of wet/dry timing across years
+	- Seasonal patterns and their variability
+	- Extreme events (very dark blue cells)
+	
+	**💭 Remember**:
+	- **Apparent delay**: Trailing sums shift peaks by ~`(n–1)/2` days. Example: `n`=28 causes ~14-day delay in apparent timing.
+	- **Window size effects**: Larger windows accumulate more rainfall and always appear "wetter." So, do not compare absolute values between different `n` values. Instead, compare timing patterns within one window size, then test sensitivity by varying `n`.
+	
+	!!! question "Question no. $(q())"		
+	    What periods consistently appear wet or dry across years? Compare with Section 6.3.
+				   
+	!!! question "Question no. $(q())"		
+	    How does knowing wet/dry periods help farmers plan operations?
+	"""), open=show_notes)
+end
 
 # ╔═╡ f697d192-d434-4203-b1b8-043e61ab60a5
 begin
@@ -2417,6 +2331,43 @@ begin
 	fig_twf = plot_tmax_wind_rain(df; width=width)
 end |> WideCell(; max_width=width)
 
+# ╔═╡ 58e9b26d-d62e-4b9e-976f-d1b49a90fc16
+let
+	q = qno()
+	
+details(
+"Temperature-wind-rainfall notes",
+	Markdown.parse("""
+	!!! info "Temperature-wind-rainfall relationships"
+	**Correlation coefficients (`r`)**: Measure the strength of linear relationships.
+	* `r` → –1: increasingly strong negative relationship
+	* `r` ≈ 0: weak or no relationship  
+	* `r` → +1: increasingly strong positive relationship
+	
+	**Max Temperature vs Wind Speed**:
+	Relationship is location-dependent. Coastal sites: wind may bring cooler marine air (negative correlation). Inland sites: wind may advect warm or cold air masses depending on source region.
+	
+	**Wind Speed vs Rainfall**:
+	Two competing mechanisms:
+	* **Negative correlation**: Calm conditions favor localized convective rainfall development
+	* **Positive correlation**: Large-scale storms bring both wind and heavy rain simultaneously
+	
+	Which dominates depends on the site's rainfall regime (convective vs. frontal/monsoon-driven).
+	
+	**Normalized seasonal plot**:
+	Scales all three variables to 0–1 range for direct comparison. Look for which variables peak together (in-phase) versus offset timing (out-of-phase), revealing coupling patterns discussed in Fig. 1.
+	
+	!!! question "Question no. $(q())"		
+	    Why do temperature and rainfall often show negative correlation? *Hint*: consider cloud cover and evaporative cooling.
+				   
+	!!! question "Question no. $(q())"		
+	    Compare wind-rainfall relationships at one coastal versus one inland site. Are correlations weaker or stronger inland? What drives the difference?
+				   
+	!!! question "Question no. $(q())"		
+	    In the normalized plot, do temperature and rainfall peak in the same month(s)?
+	"""), open=show_notes)
+end
+
 # ╔═╡ 824d7572-067e-4d7e-a958-5c9e3b942e2a
 begin
 	function plot_rain_anomaly(df; window=60, width=700)
@@ -2525,64 +2476,740 @@ begin
 	fig_rain_anomaly = plot_rain_anomaly(df; window=window_rain_decifit, width=width)
 end |> WideCell(; max_width=width)
 
+# ╔═╡ 0ac6a248-ea47-4274-a043-3923aefef296
+let
+	q = qno()
+	
+details(
+"Rainfall anomaly notes",
+	Markdown.parse("""
+	!!! info "What is rainfall anomaly?" 
+	
+	Calculated as: `Anomaly = Observed rainfall − Climatological average` (for that location and time period)
+	
+	This measures **departure from normal** (that is, deviation from typical rainfall for that site), not whether rainfall is sufficient for crops.
+	
+	**What it tells you**:
+	- **Positive anomaly**: Wetter than usual for that location/season
+	- **Negative anomaly**: Drier than usual for that location/season
+	- **Zero anomaly**: Rainfall matches the long-term average
+	
+	**Key distinction**:
+	* **Anomaly** answers: "Is this wetter or drier than typical?" **NOT** "Is water sufficient or deficient?"
+	* **Deficit/surplus** answers: "Is rainfall enough to meet crop water demand?"
+	
+	A location can have **positive rainfall anomaly** (wetter than usual) but still experience **water deficit** if evaporative demand exceeds rainfall. Conversely, a **negative anomaly** (drier than usual) may still meet crop needs if demand is low.
+	
+	!!! info "Why anomalies matter"
+	!!! note "1. Enables meaningful comparison across different climates"
+	Absolute rainfall values cannot be compared between sites because "normal" differs drastically. For instance:
+	- Kuching, Sarawak: 400 mm/month is normal
+	- Chuping, Perlis: 100 mm/month is normal
+	So, a month with 200 mm means:
+	- Kuching: -200 mm anomaly (severe drought for local ecosystems)
+	- Chuping: +100 mm anomaly (flooding risk)
+
+	Anomalies standardize this: So, if both sites have "-50 mm anomaly", it means they are experiencing similar relative stress (drier than their respective norms), even though absolute rainfall differs (350 mm vs 50 mm).
+
+	!!! note "2. Reveals ecological stress regardless of location"
+	What stresses ecosystems is not low rainfall *per se*; it is departure from what they are adapted to:
+	- Rainforest plants in Kuching evolved for 400 mm/month → 200 mm causes wilting
+	- Dryland crops in Chuping evolved for 100 mm/month → 200 mm causes waterlogging
+	Anomaly captures this stress: large negative/positive anomalies indicate conditions outside the adapted range, regardless of absolute amounts.
+				   
+	!!! note "3. Allows temporal pattern comparison"
+	You can ask: "Did 2015's dry spell affect Kuching and Chuping similarly?"
+	
+	Absolute rainfall: Kuching got 250 mm, Chuping got 40 mm (no comparison possible)
+	
+	Anomalies: Kuching -150 mm, Chuping -60 mm (both severe, but Kuching more extreme relative to its norm)
+	
+	This reveals which region experienced greater departure from normal, identifying where agricultural or ecological impacts were likely more severe.
+				   
+	**Reference period dependency**:
+	
+	Anomalies depend on what you define as "normal." Standard practice uses 30-year climatological periods (*e.g.*, 1991–2020). Short datasets produce unreliable anomalies since the "average" itself may not represent true climate.
+	
+	**💡 Tip**:
+	
+	Set the window size that matches the crop’s growing length (*e.g.*, 30-35 days for leafy vegetables) or sensitive stage length (*e.g.*, 30–45 days for early establishment versus 60–90 days for reproductive and grain filling in many tropical annuals).
+	
+	!!! question "Question no. $(q())"		
+	    The notes distinguishes between Anomaly and Deficit/Surplus. Explain how a month could have a positive rainfall anomaly (wetter than usual) but still experience water deficit (crop water stress).
+	
+	!!! question "Question no. $(q())"		
+	    Why might a +50 mm anomaly be severe in one location but minor in another?
+				   
+	!!! question "Question no. $(q())"		
+	    Are there any cycles of sustained wetter and drier periods? How long do these cycles typically last?
+				   
+	!!! question "Question no. $(q())"		
+	    How might these sustained wet/dry cycles affect planting decisions or crop selection for farmers?
+				   
+	!!! question "Question no. $(q())"		
+	    Refer to the Rainfall Anomaly Over Time chart (second panel). Why does positive rainfall anomaly change more slowly than negative rainfall anomaly? *Hint*: Refer to Section 6.1.
+	"""), open=show_notes)
+end
+
+# ╔═╡ 4fe9fbb9-d10b-400f-96d9-05bf799f6879
+begin
+	# Crop database
+	crop_db = OrderedDict(
+	    "Banana" => CropProp(1.15, 0.6, 0.35, 35.0, 38.0, 12, 7),
+		"Cocoa" => CropProp(1.1, 1.25, 0.45, 33.0, 36.0, 20, 10),
+		"Maize" => CropProp(1.2, 1.35, 0.55, 31.0, 35.0, 20, 20),
+	    "Oil Palm" => CropProp(0.9, 0.8, 0.5, 33.0, 38.0, 17, 12),
+	    "Pineapple" => CropProp(0.55, 0.45, 0.45, 35.0, 38.0, 25, 12),
+	    "Reference (grass)" => CropProp(1.0, 1.0, 0.4, 30.0, 35.0, 25, 20),
+	    "Rice (upland)" => CropProp(1.2, 0.5, 0.3, 30.0, 32.0, 20, 7),
+		"Rubber" => CropProp(1.1, 1.0, 0.55, 34.0, 38.0, 32, 15),
+	    "Vegetables (small)" => CropProp(1.05, 0.3, 0.3, 30.0, 35.0, 7, 4),
+	)
+
+	date_db = OrderedDict([((doy_to_date(doy), doy), doy) for doy ∈ 1:365])
+
+	sel_croptype = @bind croptype PlutoUI.Select(collect(keys(crop_db)),
+												 default="Oil Palm")
+	sand_input = @bind sand PlutoUI.Slider([5:1:95...], default=30, show_value=true)
+	clay_input = @bind clay PlutoUI.Slider([5:1:60...], default=30, show_value=true)
+	
+	sd_input = @bind start_date PlutoUI.Slider(collect(keys(date_db)), 
+						 	   			       default=("May 15", 135),
+										       show_value=true)
+	
+    period_input = @bind period PlutoUI.Slider(5:5:120, default=40, show_value=true)
+	
+	@htl("""
+		<table cellpadding="0" cellspacing="0" class="load-table">
+		<tr>
+			<th>Crop/soil info</th>
+			<th>Values</th>
+		</tr>
+		<tr>
+			<td>Crop type</td>
+			<td><div class="data-display">$(sel_croptype)</div></td>
+		</tr>
+		<tr>
+			<td>Soil clay content (range 5-60%)</td>
+			<td><div class="data-display">$(clay_input)</div></td>
+		</tr>
+		<tr>
+			<td>Soil sand content (range 5-95%)</td>
+			<td><div class="data-display">$(sand_input)</div></td>
+		</tr>
+		<tr>
+			<th colspan=2>Growth Period of Interest</th>
+		</tr>
+		<tr>
+			<td>Start date</td>
+			<td><div class="data-display">$(sd_input)</div></td>
+		</tr>
+		<tr>
+			<td>Duration (days)</td>
+			<td><div class="data-display">$(period_input)</div></td>
+		</tr>
+		</table>
+	""")
+end
+
+# ╔═╡ 8fe67984-fa51-4be0-a005-5ad1bf39e67a
+Markdown.parse("""
+## 8. $(croptype) & Enviroment
+""")
+
+# ╔═╡ 52bd99e5-64c0-4520-a4bf-cb4c40dbc720
+begin
+	crop_prop = crop_db[croptype]
+
+	@bind init confirm(PlutoUI.combine() do Child
+		inputs = [
+			Child(:kc, PlutoUI.Slider(0.1:0.05:2, 
+									  default=crop_prop.kc, show_value=true)),
+			Child(:dg, PlutoUI.Slider(0.1:0.05:3, 
+									  default=crop_prop.dg, show_value=true)),
+			Child(:cr_awc, PlutoUI.Slider(0.05:0.05:0.95,
+									 	  default=crop_prop.cr_awc,
+										  show_value=true)),
+    		Child(:cwsd, PlutoUI.Slider(2:50, default=crop_prop.cwsd,
+										show_value=true)),
+    		Child(:tbase, PlutoUI.Slider(20:0.5:50, default=crop_prop.tbase,
+										 show_value=true)),
+    		Child(:tcr, PlutoUI.Slider(20:0.5:50, default=crop_prop.tcr,
+									   show_value=true)),
+    		Child(:chsd, PlutoUI.Slider(2:50, default=crop_prop.chsd,
+										show_value=true)),
+		]
+
+		@htl("""
+			<table cellpadding="0" cellspacing="0" class="load-table">
+			<tr>
+				<th>$(croptype)</th>
+				<th>Crop values</th>
+			</tr>
+			<tr>
+				<td>Crop coefficient Kc (>0)</td>
+				<td><div class="data-display">$(inputs[1])</div></td>
+			</tr>
+			<tr>
+				<td>Root depth (>0 m)</td>
+				<td><div class="data-display">$(inputs[2])</div></td>
+			</tr>
+			<tr>
+				<td>Drought sensitivity (0=least to 1=most sensitive)</td>
+				<td><div class="data-display">$(inputs[3])</div></td>
+			</tr>
+		    <tr>
+		        <td>Max. tolerable CWSD<sup>1</sup> (days)</td>
+		        <td><div class="data-display">$(inputs[4])</div></td>
+		    </tr>	
+		    <tr>
+		        <td>Heat threshold (°C)</td>
+		        <td><div class="data-display">$(inputs[5])</div></td>
+		    </tr>	
+		    <tr>
+		        <td>Severe heat threshold (°C)</td>
+		        <td><div class="data-display">$(inputs[6])</div></td>
+		    </tr>	
+		    <tr>
+		        <td>Max. tolerable CHSD<sup>2</sup> (days)</td>
+		        <td><div class="data-display">$(inputs[7])</div></td>
+		    </tr>	
+		</table>
+		<div style="font-size: 9pt; margin-top: 8px;">
+			<sup>1</sup>CWSD = Cumulative Water Stress Days (total days with soil water below critical available water content)<br>
+			<sup>2</sup>CHSD = Cumulative Heat Stress Days (total days with maximum temperature above heat threshold)<br>&nbsp;
+		</div>
+		""")
+	end; label="🔄 Update")
+end
+
+# ╔═╡ ee0e50c1-4c31-421e-b07f-8ffaace46561
+md"""
+### 8.2. $(croptype) Stress
+"""
+
 # ╔═╡ bd8f5ed4-7a66-4256-a4ea-690280cca8a0
 begin
-	function awc_input(c, s, depth_in_meters=1)
-		total = c + s
-		if total <= 100.0
-			awc = est_awc(c, s)
-		else
-			awc = 0.1462   # AWC for default 30% clay and 30% sand
-			@warn "Clay + Sand cannot exceed 100%. AWC set to 146.2 mm."
-		end
-		awc * depth_in_meters * 1000   # convert to mm
-	end
+	kc = init.kc
+	dg = init.dg               
+	cr_awc = init.cr_awc
 
-	kc_val = crop_db[croptype].kc
-	if !isnothing(tryparse(Float64, init.kc))
-		v = parse(Float64, init.kc)
-		if v <= 0
-			@warn "Crop coefficient must be >0. Using default value $(kc_val)"
-		else
-			kc_val = v
-		end
-	else
-		@warn "Invalid crop coefficient value. Using default value $(kc_val)"
-	end
-			
-	dg_val = crop_db[croptype].dg               
-	if !isnothing(tryparse(Float64, init.dg))
-		v = parse(Float64, init.dg)
-		if v <= 0
-			@warn "Root depth must be >0. Using default value $(dg_val)"
-		else
-			dg_val = v
-		end
-	else
-		@warn "Invalid root depth value. Using default value $(dg_val)"
+	awc = round(soil_water_storage(clay, sand, dg); digits=1)
+	
+	start_day = date_db[start_date]
+	cwsd = init.cwsd
+	tbase = init.tbase
+	tcr = init.tcr
+	chsd = init.chsd
+
+	if tbase > tcr
+		@warn "Heat threshold ($(tbase)) cannot exceed " *
+			  "Severe heat threshold ($(tcr))."
 	end
 	
-	stress_val = crop_db[croptype].stress
-	if !isnothing(tryparse(Float64, init.stress))
-		v = parse(Float64, init.stress)
-		if v < 0 || v > 1
-			@warn "Stress threshold be between 0 and 1. Using default value " *
-				  "$(stress_val)"
-		else
-			stress_val = v
-		end
-	else
-		@warn "Invalid stress threshold. Using default value $(stress_val)"
+	if !isempty(df)
+		df.etc = kc .* df.et0   # update/create ETc column
 	end
 
-	df.etc = df.et0 * kc_val	# update actual crop ET (ETc)
-	awc = round(awc_input(clay, sand, dg_val); digits=1)
+	pd_res = eval_period(df, start_day, period, awc, cr_awc, tbase, tcr)
+
 	nothing
 end
 
+# ╔═╡ add04be8-dce7-49f0-8390-3dea2076d2d7
+begin
+	function plot_distribution(df; par=:tmin, width=700)
+	    if isempty(df)
+	        return show_empty_chart("No results yet; no chart to plot.", width)
+	    end
+	    
+	    # Variable settings
+	    var_settings = Dict(
+	        :tmin => (label="Min. temp.", unit="°C", 
+	                  column=:tmin, dist_type=:skewnorm),
+	        :tmax => (label="Max. temp.", unit="°C", 
+	                  column=:tmax, dist_type=:skewnorm),
+	        :wind => (label="Wind speed", unit="m s⁻¹", 
+	                  column=:wind, dist_type=:weibull)
+	    )
+	    
+	    # Get settings for chosen variable
+	    vset = var_settings[par]
+	    is_wind = (par == :wind)
+	    
+	    # Extract all samples
+	    all_samples = df[!, vset.column]
+	    
+	    # Get year information
+	    years = unique(df.year)
+	    nyears = length(years)
+	    firstyear = minimum(years)
+	    lastyear = maximum(years)
+	    
+	    # Fit appropriate distribution
+	    all_dist = is_wind ? fit_weibull(all_samples) : fit_skewnorm(all_samples)
+	    
+	    # Calculate statistics
+	    avg = round(mean(all_samples), digits=2)
+	    sd = round(std(all_samples), digits=2)
+	    rlag = round(first(autocor(all_samples, [1])), digits=2)
+	    
+	    # Year range text
+	    txt = nyears > 1 ? 
+	          "$nyears years: $firstyear-$lastyear" :
+	          "$nyears year: $firstyear"
+	    
+	    # Adjust figure height for legend
+	    xhgt = showperiod ? 50 : 0
+	    fig = Figure(size=(width, 1050 + xhgt))
+	
+	    # ========== Panel 1: Histogram with PDF ==========
+	    # Title includes skewness for temperature, not for wind
+	    title_str = if is_wind
+	        "$(vset.label) Distribution ($txt)\n(μ=$avg, σ=$sd, r=$rlag)"
+	    else
+	        sk = round(skewness(all_samples), digits=2)
+	        "$(vset.label) Distribution ($txt)\n(μ=$avg, σ=$sd, r=$rlag, γ=$sk)"
+	    end
+	    
+	    ax1 = Axis(fig[1, 1],
+	               xlabel="$(vset.label) ($(vset.unit))",
+	               ylabel="Density",
+	               title=title_str)
+	    
+	    hist!(ax1, all_samples, bins=30, normalization=:pdf,
+	          color=(:skyblue, 0.7), strokecolor=:black, strokewidth=1)
+	    
+	    x_min, x_max = extrema(all_samples)
+	    x_range_pdf = range(x_min, x_max, length=N_SAMPLES)
+	    
+	    # For wind (Weibull), always use broadcasting; for temp, check skewness
+	    if is_wind
+	        y_range_pdf = pdf.(all_dist, x_range_pdf)
+	    else
+	        sk = skewness(all_samples)
+	        bNormalSkew = (abs(sk) < SKEW_THRESHOLD)
+	        y_range_pdf = bNormalSkew ? pdf.(all_dist, x_range_pdf) : 
+	                                    pdf(all_dist, x_range_pdf)
+	    end
+	    
+	    lines!(ax1, x_range_pdf, y_range_pdf, color=:blue, linewidth=2)
+	    
+	    # ========== Panel 2: Time series with Fourier fit ==========
+	    total_days = length(all_samples)
+	    t = collect(0:(total_days-1))
+	    
+	    @. fourier_model(t, p) = p[1] + 
+	                             p[2]*cos(2π*t/365) + p[3]*sin(2π*t/365) +
+	                             p[4]*cos(4π*t/365) + p[5]*sin(4π*t/365)
+	    
+	    # Different initial guesses for wind vs temperature
+	    p0 = is_wind ? [mean(all_samples), 0.3, 0.3, 0.2, 0.2] :
+	                   [mean(all_samples), 5.0, 5.0, 1.0, 1.0]
+	    
+	    fit = curve_fit(fourier_model, t, all_samples, p0)
+	    full_trend_curve = fourier_model(t, fit.param)
+	    
+	    # Extract coefficients
+	    a0 = round(fit.param[1], digits=2)
+	    a1, b1, a2, b2 = fmt.(fit.param[2:end])
+	    
+	    # Create equation string
+	    eq_str = L"f(t)=%$(a0)%$(a1)\cos(\omega t)%$(b1)\sin(\omega t)%$(a2)\cos(2\omega t)%$(b2)\sin(2\omega t)"
+	    
+	    # Y-axis limits: wind starts at 0, temperature allows negative
+	    vmin, vmax = extrema(all_samples)
+	    ymin = is_wind ? 0 : vmin * 0.95
+	    ymax = vmax * 1.05
+	    
+	    # Create x-axis ticks: year numbers
+	    tick_positions = [1 + (i-1) * 365 for i in 1:(nyears+1)]
+	    tick_labels = string.(1:(nyears+1))
+	    
+	    ax2 = Axis(fig[2, 1],
+	               xlabel="Year",
+	               ylabel="$(vset.label) ($(vset.unit))",
+	               title=eq_str,
+	               limits=(0, length(all_samples) + 10, ymin, ymax),
+	               xticks=(tick_positions, tick_labels))
+	    
+	    # Scatter plot of all concatenated data
+	    x_range = 1:length(all_samples)
+	    scatter!(ax2, x_range, all_samples, 
+	             color=:red, markersize=3,
+	             strokecolor=:black, strokewidth=0.5)
+	    
+	    # Plot trend curve
+	    lines!(ax2, 1:length(full_trend_curve), full_trend_curve,
+	           color=:darkgreen, linewidth=3, linestyle=:solid)
+	    
+	    # Add period markers if requested
+	    showperiod && add_period_lines_scatter!(ax2, nyears, start_day, period)
+	
+	    # ========== Panel 3: Monthly violins ==========
+	    ax3 = Axis(fig[3, 1],
+	               xlabel = "Month",
+	               ylabel = "$(vset.label) ($(vset.unit))",
+	               xticks = (1:12, mths()))
+	    
+	    violin!(ax3, df.month, all_samples,
+	            datalimits = extrema,
+	            color = (:skyblue, 0.7),
+	            show_median = true,
+	            strokecolor = :black,
+	            strokewidth = 1)
+	    
+	    refline = hlines!(ax3, [avg], color=:red, linestyle=:dash, linewidth=2)
+	    
+	    # Legend for violins
+	    Legend(fig[4, 1], [refline], ["Overall mean"], 
+	           framevisible=false, tellwidth=false)
+	    rowsize!(fig.layout, 4, 0)
+	    
+	    # Add period legend if showing period
+	    if showperiod
+	        add_period_legend!(fig, 5, start_day, period)
+	    end
+	    
+	    fig
+	end
+
+	
+	# Helper function to add period bands to scatter plot
+	function add_period_lines_scatter!(ax, nyears, day0, period)
+	    day1 = day0 + period
+	    if day1 > 365
+	        day1 -= 365
+	    end
+	    
+	    wrapped = day1 < day0  # Period wraps around year boundary
+	    
+	    if wrapped
+	        for i ∈ 1:(nyears-1)
+	            vspan!(ax, (i-1)*365 + day0, i*365,
+	                   color=(:orange, 0.25))
+	        end
+	        
+	        for i ∈ 2:nyears
+	            vspan!(ax, (i-1)*365 + 1, (i-1)*365 + day1,
+	                   color=(:orange, 0.25))
+	        end
+	    else
+	        for i ∈ 1:nyears
+	            vspan!(ax, (i-1)*365 + day0, (i-1)*365 + day1,
+	                   color=(:orange, 0.25))
+	        end
+	    end
+	end
+	
+	
+	# Helper function to add period legend
+	function add_period_legend!(fig, row, day0, period; col=1)
+	    day1 = day0 + period
+	    if day1 > 365
+	        day1 -= 365
+	    end
+	    
+	    leg_elements = [
+	        PolyElement(color=(:orange, 0.25), strokecolor=:transparent)
+	    ]
+	    
+	    wrapped = day1 < day0
+	    leg_labels = if wrapped
+	        ["Days $(day0)-$(day1) (next year)"]
+	    else
+	        ["Days $(day0)-$(day1)"]
+	    end
+	    
+	    Legend(fig[row, col], leg_elements, leg_labels,
+	           "Period of Interest:",
+	           titleposition=:left, titlefont=:regular,
+	           orientation=:horizontal,
+	           tellwidth=false,
+	           tellheight=true,
+	           framevisible=false,
+	           halign=:center, patchsize=(30,15))
+	    rowsize!(fig.layout, row, 0)
+	end
+	
+	
+	fig_dist_tmin = plot_distribution(df; par=:tmin, width=width)
+end |> WideCell(; max_width=width)
+
+# ╔═╡ 52768246-c7e3-4d64-a6f9-cc1e342d1950
+begin
+	fig_dist_tmax = plot_distribution(df; par=:tmax, width=width)
+end |> WideCell(; max_width=width)	
+
+# ╔═╡ 8393867f-17a8-4eaa-a122-3ef3dd2ddfc8
+begin
+	fig_dist_wind = plot_distribution(df; par=:wind, width=width)
+end |> WideCell(; max_width=width)	
+
+# ╔═╡ 8000997f-84da-4420-b26e-fac3e7497a38
+begin
+	function plot_hovmoller(df; par=:tmin, window=7, width=700)
+	    if isempty(df)
+			return show_empty_chart("No results yet; no chart to plot.", width)
+		end
+	    
+	    # Variable settings
+	    var_settings = Dict(
+	        :tmin => (label="Min. temp.", unit="°C", column=:tmin, n_colors=10),
+	        :tmax => (label="Max. temp.", unit="°C", column=:tmax, n_colors=10),
+	        :wind => (label="Wind speed", unit="m s⁻¹", column=:wind, n_colors=15)
+	    )
+	    
+	    # Get settings for chosen variable
+	    vset = var_settings[par]
+	    
+	    # Get year information
+	    years = sort(unique(df.year))
+	    nyears = length(years)
+	    firstyear = minimum(years)
+	    lastyear = maximum(years)
+	    
+	    if nyears < 2
+			return show_empty_chart("Need ≥2 years of data to plot.", width)
+		end
+	    
+	    # === Prepare DOY data with running mean ===
+	    max_days = 365
+	    hovmoller_doy = fill(NaN, nyears, max_days)
+	    
+	    # Running mean window size
+	    half_window = window ÷ 2
+	    
+	    for (yn_idx, year) in enumerate(years)
+	        # Get data for this year
+	        year_data = filter(row -> row.year == year, df)
+	        year_values = year_data[!, vset.column]
+	        
+	        # Only process first 365 days (skip leap day if present)
+	        n_days = min(length(year_values), 365)
+	        
+	        for doy in 1:n_days
+	            # Calculate running mean centered on this day
+	            start_idx = max(1, doy - half_window)
+	            end_idx = min(n_days, doy + half_window)
+	            hovmoller_doy[yn_idx, doy] = mean(year_values[start_idx:end_idx])
+	        end
+	    end
+	    
+	    # === Calculate color range ===
+	    all_values = df[!, vset.column]
+	    data_min = minimum(all_values)
+	    data_max = maximum(all_values)
+	    
+	    # === Create figure ===
+	    year_range = firstyear:lastyear
+	    panel_height = max(250, nyears * 80)
+		xhgt = showperiod ? 50 : 0
+	    fig_height = panel_height + 50 + xhgt
+	    fig = Figure(size=(width, fig_height))
+	    
+	    # X-axis labels: first day of each month + end of year
+	    month_starts = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 365]
+	    month_labels = [string(v) for v in month_starts]
+	    
+	    # === Running Mean ===
+	    ax_doy = Axis(
+	        fig[1, 1],
+	        xlabel="Day of Year",
+	        ylabel="Year",
+	        title="$(vset.label) - $window-Day Running Mean ($nyears years: " *
+	              "$(first(year_range))-$(last(year_range)))",
+	        xticks=(month_starts, month_labels),
+	        yticks=(1:nyears, string.(year_range))
+	    )
+	    
+	    n_colors = vset.n_colors
+	    cmap = cgrad(:coolwarm, n_colors, categorical=true)
+	    hm_doy = heatmap!(ax_doy, 1:max_days, 1:nyears, hovmoller_doy',
+	                      colormap=cmap, colorrange=(data_min, data_max),
+	                      interpolate=false)
+	    
+	    # Add gridlines
+	    for i in 0:nyears
+	        hlines!(ax_doy, [i + 0.5], color=:black, linewidth=0.5, alpha=0.3)
+	    end
+	    
+	    for day in month_starts
+	        vlines!(ax_doy, [day + 0.5], color=:black, linewidth=0.5, alpha=0.2)
+	    end
+	    
+	    # Calculate colorbar ticks
+	    bin_width = (data_max - data_min) / n_colors
+	    tick_positions = [data_min + bin_width * i for i in 0:n_colors]
+	    tick_labels = [string(round(pos, digits=1)) for pos in tick_positions]
+	    
+	    Colorbar(fig[2, 1], hm_doy, 
+	             label="$window-day average $(vset.label) ($(vset.unit))", 
+	             vertical=false, flipaxis=false,
+	             ticks=(tick_positions, tick_labels))
+	    
+		showperiod && add_period_lines!(fig, ax_doy, 3, start_day, period)
+		
+	    fig
+	end
+	
+	
+	function add_period_lines!(fig, ax, row, day0, period; col=1)
+		day1 = day0 + period
+		if day1 > 365
+			day1 -= 365
+		end
+
+		vlines!(ax, day0, color=:black, linestyle=(:dash, :dense), 
+				linewidth=4, label="start")
+		vlines!(ax, day1, color=:black, linestyle=:solid, 
+				linewidth=4, label="end")
+		
+		leg_elements = [
+			LineElement(color=:black, linestyle=(:dash, :dense), linewidth=4),
+			LineElement(color=:black, linestyle=:solid, linewidth=4)
+		]
+		leg_labels = ["Start (Day $(day0))", "End (Day $(day1))"]
+		
+		Legend(fig[row, col], leg_elements, leg_labels,
+			   "Period of Interest:",
+			   titleposition=:left, titlefont=:regular,
+			   orientation=:horizontal,
+			   tellwidth=false,
+			   tellheight=true,
+			   framevisible=false,
+			   halign=:center, patchsize=(30,0))
+	end	
+
+		
+	fig_hov_tmin = plot_hovmoller(df; par=:tmin, 
+			  					  window=window_tmin, width=width)
+end |> WideCell(; max_width=width)
+
+# ╔═╡ 1f1d5a9e-53b4-42ef-9801-78254dbe45c5
+begin
+	fig_hov_tmax = plot_hovmoller(df; par=:tmax, 
+			 					  window=window_tmax, width=width)
+end |> WideCell(; max_width=width)	
+
+# ╔═╡ 4bcdc54a-5591-46c0-a1fd-e2bfa8e20553
+begin
+	fig_hov_wind = plot_hovmoller(df; par=:wind, 
+								  window=window_wind, width=width)
+end |> WideCell(; max_width=width)	
+
+# ╔═╡ b5091909-f90e-46bf-ba43-ac9d3bbd8ea0
+begin
+	function plot_rain_hovmoller(df; window=30, width=700)
+	    if isempty(df)
+			return show_empty_chart("No results yet; no chart to plot.", width)
+	    end
+	    
+		# Extract year information
+	    years = sort(unique(df.year))
+	    nyears = length(years)
+	    firstyear = minimum(years)
+	    lastyear = maximum(years)
+	    
+	    # === Prepare DOY data with running sum ===
+	    max_days = maximum([nrow(df[df.year .== yr, :]) for yr ∈ years])
+	    hovmoller_doy = fill(NaN, nyears, max_days)
+	    
+	    # Running sum window size (total accumulation over window)
+	    half_window = window ÷ 2
+	    
+	    for (yn, year) ∈ enumerate(years)
+	        year_rain = df[df.year .== year, :rain]
+	        n_days = length(year_rain)
+	        
+	        for doy ∈ 1:n_days
+	            # Calculate running sum centered on this day
+	            start_idx = max(1, doy - half_window)
+	            end_idx = min(n_days, doy + half_window)
+	            hovmoller_doy[yn, doy] = sum(year_rain[start_idx:end_idx])
+	        end
+	    end
+	    
+	    # === Prepare Monthly data (monthly totals) ===
+	    hovmoller_monthly = fill(NaN, nyears, 12)
+	    
+	    for (yn, year) ∈ enumerate(years)
+	        for month ∈ 1:12
+	            month_rain = df[(df.year .== year) .& (df.month .== month), :rain]
+	            if !isempty(month_rain)
+	                hovmoller_monthly[yn, month] = sum(month_rain)
+	            end
+	        end
+	    end
+	    
+	    # === Calculate color ranges ===
+	    # For running sum
+	    doy_min = minimum(filter(!isnan, hovmoller_doy))
+	    doy_max = maximum(filter(!isnan, hovmoller_doy))
+	    
+	    # For monthly totals
+	    monthly_min = minimum(filter(!isnan, hovmoller_monthly))
+	    monthly_max = maximum(filter(!isnan, hovmoller_monthly))
+	    
+	    # === Create figure ===
+	    year_range = firstyear:lastyear
+	    panel_height = max(250, nyears * 80)
+		xhgt = showperiod ? 50 : 0
+	    fig_height = panel_height + 50 + xhgt
+	    fig = Figure(size=(width, fig_height))
+	    
+	    # X-axis labels: first day of each month + end of year
+	    month_starts = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 365]
+	    month_labels = [string(v) for v in month_starts]
+	    
+	    # === Running Sum Panel ===
+	    ax_doy = Axis(
+	        fig[1, 1],
+	        xlabel="Day of Year",
+	        ylabel="Year",
+	        title="Rainfall - $(window)-Day Running Sum ($nyears years: " *
+	              "$(first(year_range))-$(last(year_range)))",
+	        xticks=(month_starts, month_labels),
+	        yticks=(1:nyears, string.(year_range))
+	    )
+	    
+	    n_colors = 10
+	    colors = [get(ColorSchemes.YlGnBu, x) 
+	              for x ∈ range(0, 0.8, length=n_colors)]
+	    cmap = cgrad(colors, n_colors, categorical=true)
+	    
+	    hm_doy = heatmap!(ax_doy, 1:max_days, 1:nyears, hovmoller_doy',
+	                      colormap=cmap, colorrange=(doy_min, doy_max),
+	                      interpolate=false)
+	    
+	    # Grid lines
+	    for i ∈ 0:nyears
+	        hlines!(ax_doy, [i + 0.5], color=:black, linewidth=0.5, alpha=0.3)
+	    end
+	    
+	    for day ∈ month_starts
+	        vlines!(ax_doy, [day + 0.5], color=:black, linewidth=0.5, alpha=0.2)
+	    end
+	    
+	    bin_width = (doy_max - doy_min) / n_colors
+	    tick_positions = [doy_min + bin_width * i for i in 0:n_colors]
+	    tick_labels = [string(round(pos, digits=1)) for pos in tick_positions]
+	    
+	    Colorbar(fig[2, 1], hm_doy, label="$(window)-day accumulated rainfall (mm)", 
+	             vertical=false, flipaxis=false,
+	             ticks=(tick_positions, tick_labels), width=Relative(0.95))
+	    
+		showperiod && add_period_lines!(fig, ax_doy, 3, start_day, period)
+		
+		fig
+	end
+	
+	fig_hov_rain = plot_rain_hovmoller(df; window=window_rain, width=width)
+end |> WideCell(; max_width=width)
+
 # ╔═╡ ffc702bf-2b17-4168-a423-826ab0821d47
 begin
-	function plot_waterstorage(df, awc, stress_threshold; width=700)
+	function plot_waterstorage(df, awc, cr_awc; width=700)
 	    if isempty(df)
 	        return show_empty_chart("No results yet; no charts to plot.", width)
 	    end
@@ -2632,11 +3259,12 @@ begin
 	    
 	    year_range = firstyear:lastyear
 	    panel_height = max(250, nyears * 80)
-	    fig_height = panel_height + 50  # Extra space for legend
+		xhgt = showperiod ? 50 : 0
+	    fig_height = panel_height + 50 + xhgt  # Extra space for legend
 	    fig = Figure(size=(width, fig_height))
 	    
 	    # Panel 1: Heatmap
-		stress_level = stress_threshold * awc
+		stress_level = cr_awc * awc
 	    month_starts = [1, 32, 60, 91, 121, 152, 182, 213, 244, 274, 305, 335, 365]
 	    month_labels = [string(v) for v ∈ month_starts]
 	    ax1 = Axis(fig[1, 1],
@@ -2648,36 +3276,35 @@ begin
 	              yticks=(1:nyears, string.(year_range)))
 	    
 		# Calculate zones
-		stress_level = stress_threshold * awc
 		n_total = 10
-		n_stress = clamp(round(Int, n_total * stress_threshold), 1, n_total - 1)
+		n_stress = clamp(round(Int, n_total * cr_awc), 1, n_total - 1)
 		n_safe = n_total - n_stress
 		
 		# Helper function for safe color generation
-		function get_colors_safe(scheme, n, intensity_range=(0.25, 0.85))
+		function get_colors_safe(scheme, n, dark_to_light=true)
 		    if n == 1
-		        # Single color: use middle-high intensity
 		        return [get(scheme, 0.6)]
 		    else
-		        # Multiple colors: use full range
-		        return [get(scheme, x) for x in range(intensity_range[2], intensity_range[1], length=n)]
+		        if dark_to_light
+		            return [get(scheme, x) for x in range(0.85, 0.25, length=n)]
+		        else
+		            return [get(scheme, x) for x in range(0.25, 0.85, length=n)]
+		        end
 		    end
 		end
 		
-		# Generate colors
-		stress_colors = get_colors_safe(ColorSchemes.Reds_9, n_stress, (0.25, 0.85))
-		safe_colors = get_colors_safe(ColorSchemes.Blues_9, n_safe, (0.25, 0.85))
+		stress_colors = get_colors_safe(ColorSchemes.Reds_9, n_stress, true)
+		safe_colors = get_colors_safe(ColorSchemes.Blues_9, n_safe, false)
 		all_colors = vcat(stress_colors, safe_colors)
 		
-		stress_pos = collect(range(0.0, stress_threshold, length=n_stress + 1))
-		safe_pos = collect(range(stress_threshold, 1.0, length=n_safe + 1))[2:end]
+		stress_pos = collect(range(0.0, cr_awc, length=n_stress + 1))
+		safe_pos = collect(range(cr_awc, 1.0, length=n_safe + 1))[2:end]
 		color_pos = vcat(stress_pos, safe_pos)
 		cmap = cgrad(all_colors, color_pos)
 		
 		hm = heatmap!(ax1, 1:max_doy, 1:nyears, water_matrix',
-		              colormap=cmap,
-		              colorrange=(0, awc))
-		
+		              colormap=cmap, colorrange=(0, awc))
+
 		stress_ticks_mm = collect(range(0, stress_level, length=n_stress + 1))
 		safe_ticks_mm = collect(range(stress_level, awc, length=n_safe + 1))[2:end]
 		tick_positions = vcat(stress_ticks_mm, safe_ticks_mm)
@@ -2689,12 +3316,14 @@ begin
 		         flipaxis=false,
 		         ticks=(tick_positions, tick_labels),
 		         width=Relative(0.95),
-		         ticklabelsize=10)
+		         ticklabelsize=11)
 		
-	    fig
+		showperiod && add_period_lines!(fig, ax1, 3, start_day, period)
+		
+		fig
 	end	
 
-	fig_waterstorage = plot_waterstorage(df, awc, stress_val; width=width)
+	fig_waterstorage = plot_waterstorage(df, awc, cr_awc; width=width)
 end |> WideCell(; max_width=width)
 
 # ╔═╡ 8968e9d2-5e33-457d-8931-18432977d1c3
@@ -2731,11 +3360,203 @@ begin
 
 		foreach(z->save(z[1], z[2]), zip(fnames, figs))
 	
-		msg = "Saved figures to: $(site_path)"
+		msg = "💾 Saved all figures to: $(site_path)"
 		quick_msg(msg)
 	end
 
 	save_all()
+end
+
+# ╔═╡ a1cf3076-680d-4cec-a820-926d79398b0b
+let
+	if isnothing(pd_res) || isempty(pd_res)
+        @info "⚠️ No data yet; nothing to report."
+    else
+		if tbase < tcr
+			out = stress_metrics(pd_res, start_day, period, tbase, tcr, cwsd, chsd)
+			title = "Crop Water and Heat Stress During Period of Interest" 
+	
+			@htl("""
+	        <div style="font-family: monospace; font-size: 11pt;">
+				<p style="text-align: center;">$(title)</p>
+				$(out.pt)
+				<p style="text-align: center;">$(out.risk)</p>
+			</div>
+			""")
+		else
+			@warn "Heat threshold ($(tbase)) cannot exceed " *
+				  "Severe heat threshold ($(tcr))."
+		end
+    end
+end
+
+# ╔═╡ 1b871b02-3dbd-4388-b5ee-d9ab39f5e7b9
+let
+	q = qno()
+	
+details(
+"Crop & enviroment notes",
+	Markdown.parse("""
+	!!! info "Soil water balance"
+	Daily soil moisture is estimated using a water balance approach, comprising:
+	
+	* **✚ Inputs:** Rainfall (water added to soil)
+	
+	
+	* **▬ Outputs:** Crop evapotranspiration (ETc), calculated as:
+	    - ETc = Kc × ET₀
+	    - ET₀ = Reference evapotranspiration (calculated from temperature, humidity, wind, radiation, and latitude using [FAO‑56 Penman–Monteith] (https://www.fao.org/4/x0490e/x0490e06.htm) method))
+	    - Kc = Crop coefficient (accounts for crop-specific water use)
+	
+	* **∆ Daily change:** Soil storage increases with rainfall, decreases with ETc
+	
+	**Crop-specific parameters:**
+	
+	* **Crop Coefficient (Kc):**
+	    - Dimensionless factor that relates crop water use to reference conditions
+	    - Kc < 1.0: Crop uses less water than reference grass (*e.g.*, oil palm, Kc ≈ 0.9)
+	    - Kc > 1.0: Crop uses more water than reference grass (*e.g.*, upland rice, Kc ≈ 1.2)
+	    - Kc varies by crop species, canopy coverage, local environmental conditions, and growth stage (see [FAO-56 Chapters 6 and 8](https://www.fao.org/4/x0490e/x0490e00.htm))
+	
+	* **Rooting Depth:**
+	    - Determines total water storage accessible to the crop
+	    - Shallow roots (0.3-0.6 m): Limited water buffer, vulnerable to short dry spells
+	    - Deep roots (1.0-2.0 m): Large water reservoir, greater drought resilience
+	
+	* **Drought Sensitivity (Stress Threshold):**
+	    - Fraction of AWC below which crop experiences water stress
+	    - Low threshold (0.2-0.3): Drought-tolerant crops can extract water at low soil moisture
+	    - High threshold (0.6-0.8): Drought-sensitive crops require consistently high soil moisture
+	    - Affects yield, growth rate, and survival
+	
+	!!! info "Available Water Capacity (AWC)"
+	AWC represents the soil's maximum water storage, which is the difference between field capacity (water held after drainage) and permanent wilting point (where plants can no longer extract water). Think of AWC as the soil's "water tank capacity".
+	
+	Examples:
+	- 200 mm/m AWC: A 1-m deep soil column stores 200 L of plant-available water
+	- 50 mm/m AWC: Same depth stores only 50 L (*e.g.*, sandy soil vs. loam)
+	
+	AWC is estimated from soil texture (clay and sand content) using pedotransfer 
+	functions by [Saxton et al. (1986)](https://doi.org/10.2136/sssaj1986.03615995005000040039x). Once estimated, AWC (in mm/m) is multiplied by the crop's rooting depth (in m) to obtain the total amount of water within the rooting depth: 
+				   
+	`Total water storage = AWC (mm/m) × Rooting depth (m)`
+	
+	Example: Sandy loam (AWC = 120 mm/m) with 1.5 m rooting depth has 180 mm total storage.
+
+	**💭 Recall** that 1 mm of water depth is equivalent to 1 L (or 1 kg) of water over a 1-m² ground area.
+	
+	!!! info "Heatmap interpretation"
+	
+	Colors indicate soil water status relative to the crop-specific stress threshold:
+	
+	* **🔴 Red zone (below threshold)**:
+	    - Soil water < stress threshold → Crop experiencing water stress
+	    - Darker red = more severe stress (approaching wilting point)
+	
+	* **🔵 Blue zone (above threshold)**:
+	    - Soil water ≥ stress threshold → Adequate moisture for crop
+	    - Darker blue = more water available (approaching field capacity)
+	
+	**What to look for**
+	- Frequency of full recharge events (dark blue periods)
+	- Duration and timing of water stress periods (red zones)
+	- Recovery time after dry spells
+	- How stress patterns change with different crop selections
+	
+	!!! info "Heat stress metrics"
+	**CHSD (Cumulative Heat Stress Days):**
+	- Total count of days when maximum temperature exceeds the heat threshold
+	- Higher CHSD = prolonged exposure to stress-inducing temperatures
+	
+	**Max Heat Spell:**
+	- Longest consecutive period above heat threshold
+	- Indicates duration of continuous heat stress
+	- Critical during flowering and grain filling when sustained heat causes damage
+	
+	**Accumulated Heat (°C·days):**
+	- Sum of (Tmax - heat threshold) for all days exceeding threshold
+	- Measures total heat stress intensity, not just duration
+	- Higher values indicate both frequent and intense heat stress
+	
+	**Severe Heat Days:**
+	- Count of days exceeding the severe heat threshold (*e.g.*, >35°C)
+	- Indicates exposure to extreme temperatures causing physiological damage
+	- Even 1-2 severe heat days during flowering can significantly reduce yield
+	
+	**High-risk periods**:
+	
+	The summary reports years where CWSD or CHSD exceeded user-defined tolerance thresholds, helping identify which years posed the greatest agronomic risk for the selected crop.
+				   
+	!!! info "Why these metrics matters"
+	
+	**Water balance** integrates:
+	- **Rainfall** (water input)
+	- **Crop water demand** (ETc = Kc × ET₀)
+	- **Soil storage capacity** (AWC × rooting depth)
+	- **Crop stress sensitivity** (stress threshold)
+
+	**Stress accumulation** determines:
+	- Whether the crop-site-season combination is viable
+	- Timing of critical stress periods (planting window optimization)
+	- Risk assessment for rainfed production
+	- Need for supplemental irrigation
+	
+	Together, water balance and stress metrics enable data-driven decisions about:
+	- Crop selection for specific sites
+	- Optimal planting dates
+	- Variety selection (drought/heat tolerance requirements)
+	- Expected yield stability under climate variability
+				   
+	!!! question "Question no. $(q())."
+	    If planting a 90-day crop requiring adequate moisture throughout, which months offer the most reliable planting windows (fewest stress periods)? Select different crops from the dropdown: does the optimal planting window change?
+	
+	!!! question "Question no. $(q())."
+	    Compare the Soil Water Heatmap (7.3) with the Max Temperature Heatmap (4.3). Do periods of low soil water (red/orange) coincide with the highest maximum temperatures (red/darker periods)? What specific vulnerability does this combined heat and water stress pose to crops?
+	
+	!!! question "Question no. $(q())."
+	    Set Kc = 0.85 and stress threshold = 0.5 for both scenarios, then compare:
+	    - Scenario A: Rooting depth = 0.5 m (shallow)
+	    - Scenario B: Rooting depth = 1.5 m (deep)
+	    Examine the heatmap for each scenario:
+	    0. Which scenario shows more red (stressed) days during short dry spells (5-10 days)?
+	    0. Which scenario is more resilient to extended droughts (>15 days)?
+	    0. Trade-off question: Why don't all crops evolve deep roots?
+	
+	!!! question "Question no. $(q())."
+	    Select the same crop and rooting depth, but adjust the stress threshold from 0.3 to 0.7.
+		0. Does the total water storage (mm) change? Why or why not?
+		0. Does the number of "red" (stressed) days change? Explain what you observe.
+		0. What does a high stress threshold (0.7) tell you about this crop's water requirements?
+		0. Give one agricultural management difference between crops with threshold 0.3 vs 0.7 in the same location.
+	
+	!!! question "Question no. $(q())."
+	    Examine the rainfall patterns for your site (Section 6.6) and the soil water storage heatmap.
+		0. Identify the longest typical dry spell length (Section 6.5).
+		0. Select a crop with shallow roots (0.3-0.5 m) and high stress threshold (0.7). Observe the heatmap—approximately how many stress days occur during a typical 90-day growing season?
+		0. Now select a crop with deep roots (1.5 m) and low stress threshold (0.3). How does the stress pattern change?
+		0. Based on this site's rainfall pattern, which crop-parameter combination appears most suitable?
+
+	!!! warning "Question no. $(q())."
+		Examine the Crop Water and Heat Stress table for your selected period:
+		0. Which year had the highest CWSD? What was the total rainfall that year—was it simply a dry year, or were rain events poorly distributed?
+		0. Which year had the highest CHSD? Look at the "Severe Heat Days" column—did this year also experience extreme heat (>35°C)?
+		0. Compare the year with highest CWSD to the year with highest CHSD. Are they the same year or different? What does this tell you about heat and drought stress co-occurrence at this site?
+
+	!!! warning "Question no. $(q())."
+		0. The table reports "No. of high-risk periods" at the bottom. Which stress type (water or heat) exceeded tolerance thresholds more frequently?
+		0. Select a different crop from the dropdown. Does the number of high-risk periods change? Why might the same weather conditions pose different risks for different crops?
+		0. Based on the 3- or 5-year record, what percentage of years would you expect this crop to experience severe water stress? Is this acceptable risk for rainfed production?
+
+	!!! warning "Question no. $(q())."
+		Does the timing of water stress matter? Would stress at the beginning vs. end of the growth period affect the crop differently?
+
+	!!! warning "Question no. $(q())."
+		From a crop physiology perspective, which is worse: 20 days at 33°C (moderate heat) or 5 days at 38°C (extreme heat)? Consider critical growth stages like flowering.
+
+	!!! warning "Question no. $(q())."
+		0. If you were a farmer using this analysis, which year would have been most challenging for rainfed production? Justify using both water and heat stress metrics.
+		0. Looking at the average values, does this site appear suitable for your selected crop under rainfed conditions? What supplemental irrigation strategy (if any) would you recommend?
+	"""), open=show_notes)
 end
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
@@ -2755,6 +3576,7 @@ LsqFit = "2fda8390-95c7-5789-9bda-21331edee243"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
 Parameters = "d96e819e-fc66-5662-9728-84c9c7592b0a"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
+PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
 Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
@@ -2774,6 +3596,7 @@ LsqFit = "~0.15.1"
 OrderedCollections = "~1.8.1"
 Parameters = "~0.12.3"
 PlutoUI = "~0.7.73"
+PrettyTables = "~3.1.0"
 SpecialFunctions = "~2.6.1"
 StatsBase = "~0.34.7"
 """
@@ -2784,7 +3607,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.12.1"
 manifest_format = "2.0"
-project_hash = "24a3414ca0ccd51c9f643dc4c87f7d7be45681e0"
+project_hash = "a23926a2cfedeab9ee2f9f0e5007ebf5be690d3c"
 
 [[deps.ADTypes]]
 git-tree-sha1 = "27cecae79e5cc9935255f90c53bb831cc3c870d7"
@@ -4589,84 +5412,87 @@ version = "4.1.0+0"
 # ╔═╡ Cell order:
 # ╟─d37b6946-11d7-459f-838e-5d84c80b0f11
 # ╟─a42ede34-6c38-4106-9145-544cc0bd4e48
-# ╟─62e69d33-1902-47a2-8d6d-9401a0ff065d
-# ╟─5368f1ab-afd4-467d-82a5-d79b47676cd3
-# ╟─bef2592b-048f-4407-a26b-58444953a85f
-# ╟─3402bb40-b3d7-11f0-a219-b375107af3f7
-# ╟─c6d848be-a3f0-4279-ba1b-df4f1ed2f026
-# ╟─b50f3995-152f-44ca-926b-42dc893798ef
 # ╟─0c287c83-2dad-4303-a9fd-343c821468b0
 # ╟─6152f922-0342-48bb-bf48-c6206c6a3cf6
 # ╟─5b0cc9ca-f269-4d74-9968-afb479cd2969
 # ╟─fa2a3c3c-6aa1-40e7-b8a2-ec15ba4069cb
 # ╟─8968e9d2-5e33-457d-8931-18432977d1c3
+# ╟─5368f1ab-afd4-467d-82a5-d79b47676cd3
+# ╟─bef2592b-048f-4407-a26b-58444953a85f
+# ╟─3402bb40-b3d7-11f0-a219-b375107af3f7
+# ╟─c6d848be-a3f0-4279-ba1b-df4f1ed2f026
+# ╟─b50f3995-152f-44ca-926b-42dc893798ef
 # ╟─0c722376-bbfd-45a9-bfa8-1aa8739f9a85
 # ╟─59d16002-60a5-4bfe-a17f-932c3fd96aa8
-# ╟─3dc912ad-cf32-42a2-a6b6-a4b21c122c7a
 # ╟─add04be8-dce7-49f0-8390-3dea2076d2d7
+# ╟─3dc912ad-cf32-42a2-a6b6-a4b21c122c7a
 # ╟─eca15e5f-33bf-4837-98d3-9ba64c9fcdf3
-# ╟─245ca246-0aea-4b0a-a4bf-4c45e9ebfc4f
 # ╟─51f6d474-2641-4dbb-93dc-c54ab46dff42
+# ╟─245ca246-0aea-4b0a-a4bf-4c45e9ebfc4f
 # ╟─32d4784a-d59b-4f6a-9f46-c53dc93f40e7
-# ╟─e675760c-c2c7-4743-a96a-18b72a455435
 # ╟─8000997f-84da-4420-b26e-fac3e7497a38
 # ╟─fbce7664-c0de-496d-be00-10f76dea43b6
+# ╟─e675760c-c2c7-4743-a96a-18b72a455435
 # ╟─43113a8f-5841-4789-b9fb-adcb2c48807b
 # ╟─dd6fe4f1-7060-4dff-af11-d5f2c50f77c2
-# ╟─a9987d0b-ca5e-4063-8ba7-128021588710
 # ╟─52768246-c7e3-4d64-a6f9-cc1e342d1950
+# ╟─a9987d0b-ca5e-4063-8ba7-128021588710
 # ╟─462b1e0c-1232-4b2e-9365-d01b2e28be0d
-# ╟─c87244ea-48b5-4766-ab5c-52b637ed13a9
 # ╟─92e366d3-61d0-46e7-9c34-448697dc2aeb
+# ╟─c87244ea-48b5-4766-ab5c-52b637ed13a9
 # ╟─1e557802-e526-42dd-b9a2-63839e867eea
-# ╟─7672cf1c-0219-45ea-ac50-8d724cb25483
 # ╟─1f1d5a9e-53b4-42ef-9801-78254dbe45c5
 # ╟─b7a4e62b-a2ad-407b-91a3-fdea7843d14f
+# ╟─7672cf1c-0219-45ea-ac50-8d724cb25483
 # ╟─d1076ae7-56a8-4e35-9ab0-41455acd893b
 # ╟─d231b4a7-7cd8-4497-8c70-231ff3783761
-# ╟─a110527e-7fdf-4167-84e4-3c440a91f016
 # ╟─8393867f-17a8-4eaa-a122-3ef3dd2ddfc8
+# ╟─a110527e-7fdf-4167-84e4-3c440a91f016
 # ╟─fb1f648c-5d2e-434d-b456-1d2b08f193e8
-# ╟─269c9adf-2597-46cd-a7c7-297bc9c44681
 # ╟─5825a5cb-a0be-49cd-be3d-c94161f8bc31
+# ╟─269c9adf-2597-46cd-a7c7-297bc9c44681
 # ╟─1429b63b-8122-4351-9407-72272e782b6c
-# ╟─5630d61f-d01a-4cf4-b569-0cc0bc00e66f
 # ╟─4bcdc54a-5591-46c0-a1fd-e2bfa8e20553
 # ╟─1c50fe2b-23df-4ba1-8d7e-9a67850f5c9a
+# ╟─5630d61f-d01a-4cf4-b569-0cc0bc00e66f
 # ╟─bf717e4b-1ac1-4101-81bf-f82e461133ba
 # ╟─cffe1909-2e95-4019-bb2f-2afdec26d44e
-# ╟─0999ebf3-6b38-4214-be53-f118c67b7c95
 # ╟─5541a862-4ba6-4c05-b9c0-eaff4227e649
+# ╟─0999ebf3-6b38-4214-be53-f118c67b7c95
 # ╟─d69144f5-2aaa-4fb3-a654-02c86aa1126a
-# ╟─1ed28912-0a8c-4642-96e2-40a32a83c28c
 # ╟─f3aa9f71-4929-436b-938e-9d6817c23487
+# ╟─1ed28912-0a8c-4642-96e2-40a32a83c28c
 # ╟─c0f892f0-f11c-4354-9699-577b4c13b2d4
-# ╟─78c3cc81-0828-46d6-a9e6-88f25982a65f
 # ╟─780eb61b-8d27-46a8-ac0a-11565c408474
+# ╟─78c3cc81-0828-46d6-a9e6-88f25982a65f
 # ╟─e8e881ba-96fb-41b3-8b5b-a27151635ee9
-# ╟─27df242c-4752-4898-91cc-24832865827b
 # ╟─7b3d5e74-0289-4285-92ce-2d422589b0d2
+# ╟─27df242c-4752-4898-91cc-24832865827b
 # ╟─13429b2e-dac8-46ee-85c4-143945d07074
-# ╟─893df8c0-d71f-4b45-9de0-674975974403
 # ╟─0a606de0-f28d-4136-90e8-89168b62a561
+# ╟─893df8c0-d71f-4b45-9de0-674975974403
 # ╟─d3b95b82-3786-4c19-a135-c4c85dbc4ff1
-# ╟─8b0504e1-f480-4191-a4f4-cfe236bee4ef
 # ╟─b5091909-f90e-46bf-ba43-ac9d3bbd8ea0
 # ╟─f7ceb2cd-bb36-47dc-b3d3-4952149ff453
+# ╟─8b0504e1-f480-4191-a4f4-cfe236bee4ef
 # ╟─8094903f-4a19-4643-8b18-5c7eb0b8adfb
 # ╟─db705dba-8da8-4d56-bb6a-6ca96a737808
-# ╟─58e9b26d-d62e-4b9e-976f-d1b49a90fc16
 # ╟─f697d192-d434-4203-b1b8-043e61ab60a5
+# ╟─58e9b26d-d62e-4b9e-976f-d1b49a90fc16
 # ╟─ff9b154e-7440-4095-ae5d-490c632714b4
-# ╟─0ac6a248-ea47-4274-a043-3923aefef296
 # ╟─824d7572-067e-4d7e-a958-5c9e3b942e2a
 # ╟─b63dacdf-b6f1-4844-b1ea-b0944f2ac206
+# ╟─0ac6a248-ea47-4274-a043-3923aefef296
+# ╟─8fe67984-fa51-4be0-a005-5ad1bf39e67a
 # ╟─f9393768-1fad-4327-ab2f-4b2221b92bf5
-# ╟─1b871b02-3dbd-4388-b5ee-d9ab39f5e7b9
-# ╟─ffc702bf-2b17-4168-a423-826ab0821d47
-# ╠═4fe9fbb9-d10b-400f-96d9-05bf799f6879
+# ╟─4fe9fbb9-d10b-400f-96d9-05bf799f6879
 # ╟─52bd99e5-64c0-4520-a4bf-cb4c40dbc720
+# ╟─ffc702bf-2b17-4168-a423-826ab0821d47
 # ╟─bd8f5ed4-7a66-4256-a4ea-690280cca8a0
+# ╟─ee0e50c1-4c31-421e-b07f-8ffaace46561
+# ╟─a1cf3076-680d-4cec-a820-926d79398b0b
+# ╟─e02ebad0-f2a0-42e5-a42e-16341b675d82
+# ╟─1b871b02-3dbd-4388-b5ee-d9ab39f5e7b9
 # ╟─63f62bc8-7673-49c5-ba40-18c3a1dbebcf
 # ╟─8a062689-2c97-4e06-8693-b7fa93699a34
 # ╟─8230d169-70d3-4668-abde-5d652d2ccf07
